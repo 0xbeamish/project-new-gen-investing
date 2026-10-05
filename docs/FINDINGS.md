@@ -140,6 +140,12 @@ Where there is an edge, it is about the size of the cost of trading it.
   rule allows cap / worst-case re-read estimate = $8 / $12.83 = 0 splits. With nothing accepted,
   ON is the same system as before: ON minus FROZEN -0.063%/month, **t -0.79** (bar 3.43). Cost $0.
   The ON-vs-FROZEN gap is the monthly auto-recency refit itself (more turnover, no better IC).
+- **Yearly recency rule, free check only** (no paid replay): the half-life is now chosen once a
+  year from {6, 12, 24, 36}, moving at most one step, validated by refitting month by month
+  through the last 12 closed months. On the replay's weights it chose 6-24 months (2014-2019), and
+  the fixed alarm still froze 29 of 59 inputs (a fixed 36-month half-life: 12; no recency
+  weighting: 4). With monthly refits, any recency weighting makes most weights wander, so the
+  pre-set gate (<= 8 frozen) failed and the replay was not run.
 - **Loops on synthetic markets** (docs/TEXT.md): tracking flags a planted over-weighted field and a
   planted U-shaped field; the ladder fixes both; when the true error is a mis-weighted numeric input
   correlated with a text field, the coordinator leaves the text question alone and the outer refit

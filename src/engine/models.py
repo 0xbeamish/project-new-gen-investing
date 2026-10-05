@@ -93,10 +93,16 @@ class WalkForward:
     legacy_purge_days: int | None = None
     keep: tuple[str, ...] = ("group", "fwd_return")
     # Optional recency weighting: a training row's weight halves every `half_life` decision periods
-    # back from the block being scored (None = equal weights, the default). "auto" picks it at every
-    # refit from `auto_grid`, by rank IC on the last `auto_valid` closed periods before the block
-    # (a nested walk-forward: still only data whose labels had ended).
+    # back from the block being scored (None = equal weights, the default). "auto" picks it by rank
+    # IC on the last `auto_valid` closed periods before the refit (a nested walk-forward: only data
+    # whose labels had ended). auto_every="year": chosen once a year, at the year's first refit,
+    # from `auto_steps`, moving at most `auto_max_step` grid steps from last year's choice, so the
+    # choice can't jump month to month. auto_every="block": the old rule (re-chosen at every refit
+    # from `auto_grid`), kept to reproduce earlier runs.
     half_life: float | str | None = None
+    auto_every: str = "year"
+    auto_steps: tuple = (6, 12, 24, 36)
+    auto_max_step: int = 1
     auto_grid: tuple = (None, 36, 24, 12, 6)
     auto_valid: int = 12
 
@@ -107,6 +113,7 @@ class WalkForward:
 
         Returns (scored rows, weights per block if the model has coef_)."""
         self.chosen_: dict = {}
+        self.year_choice_: dict = {}
         X = rank_features(frame, features)
         keys = list(self.demean_by)
         y = frame[self.target] - frame.groupby(keys)[self.target].transform("mean")
@@ -132,7 +139,10 @@ class WalkForward:
             pos = {t: i for i, t in enumerate(periods)}
             hl = self.half_life
             if hl == "auto":
-                hl = self._choose(frame, X, y, ends, train, pos)
+                if self.auto_every == "block":
+                    hl = self._choose(frame, X, y, ends, train, pos, self.auto_grid)
+                else:
+                    hl = self._yearly(calendar, frame, X, y, ends, train, pos, first)
                 self.chosen_[b] = hl
             m = self._fit(frame, X, y, train, first, pos, hl)
             keep = ["entity_id", "decision_time", *[c for c in self.keep if c in frame]]
@@ -152,7 +162,50 @@ class WalkForward:
             X[train], y[train], sample_weight=0.5 ** (age / float(hl))
         )
 
-    def _choose(self, frame, X, y, ends, train, pos):
+    def _yearly(self, calendar, frame, X, y, ends, train, pos, first):
+        year = int(calendar.local_date(pd.Series([first])).dt.year.iloc[0])
+        if year not in self.year_choice_:
+            steps = list(self.auto_steps)
+            prev = [
+                v
+                for k, v in sorted(self.year_choice_.items())
+                if k < year and v is not None
+            ]
+            if prev:
+                i = steps.index(prev[-1])
+                lo, hi = max(0, i - self.auto_max_step), i + self.auto_max_step + 1
+                steps = steps[lo:hi]
+            self.year_choice_[year] = self._choose_rolling(
+                frame, X, y, ends, train, pos, tuple(steps)
+            )
+        return self.year_choice_[year]
+
+    def _choose_rolling(self, frame, X, y, ends, train, pos, grid):
+        """Each candidate refit month by month through the last `auto_valid` closed periods (each
+        fit uses only labels ended before that month) and scored on that month: a half-life that
+        adapts to a regime change can only show it if the validation lets it adapt."""
+        times = sorted(frame.loc[train, "decision_time"].unique())
+        if len(times) < self.min_train_periods + self.auto_valid:
+            return None
+        dt = frame["decision_time"].to_numpy()
+        ok = y.notna().to_numpy()
+        score = {}
+        for hl in grid:
+            ics = []
+            for t in times[-self.auto_valid :]:
+                inner = (ends < t).to_numpy() & ok
+                if frame.loc[inner, "decision_time"].nunique() < self.min_train_periods:
+                    continue
+                m = self._fit(frame, X, y, inner, t, pos, hl)
+                at = train & (dt == t)
+                p = pd.Series(m.predict(X[at]))
+                ics.append(p.corr(pd.Series(y[at].to_numpy()), method="spearman"))
+            score[hl] = float(np.nanmean(ics)) if ics else -np.inf
+        return max(
+            grid, key=lambda h: (score[h], -grid.index(h))
+        )  # ties: the earlier step
+
+    def _choose(self, frame, X, y, ends, train, pos, grid):
         times = sorted(frame.loc[train, "decision_time"].unique())
         if len(times) < self.min_train_periods + self.auto_valid:
             return None
@@ -160,7 +213,7 @@ class WalkForward:
         inner = (ends < v0).to_numpy() & y.notna().to_numpy()
         valid = train & (frame["decision_time"] >= v0).to_numpy()
         best, best_ic = None, -np.inf
-        for hl in self.auto_grid:
+        for hl in grid:
             m = self._fit(frame, X, y, inner, v0, pos, hl)
             g = pd.DataFrame(
                 {

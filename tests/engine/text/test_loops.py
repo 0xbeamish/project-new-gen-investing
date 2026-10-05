@@ -1,5 +1,7 @@
 """Tracking, the adjustment ladder and the loop coordinator on planted synthetic markets."""
 
+import itertools
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -320,3 +322,66 @@ def test_oscillation_alarm_ignores_noise_near_zero():
     assert (
         loops.count_flips([1, 0, 0, 1, 0, -1]) == 1
     )  # near-zero refits are skipped, not flips
+
+
+def text_cfg_long(tmp_path) -> dict:
+    from tests.engine.text.conftest import text_cfg
+
+    cfg = text_cfg(
+        tmp_path,
+        entities=300,
+        end="2018-12-31",
+        regime_change="2015-01-01",
+        effects={"guidance": 0.01, "x": 0.03, "x_after": -0.03},
+    )
+    cfg["periods"] = {
+        "tuning": ["2010-01-01", "2019-01-01"],
+        "check": ["2019-01-01", "2019-06-01"],
+        "holdout_start": "2019-06-01",
+    }
+    return cfg
+
+
+def test_auto_recency_is_chosen_yearly_moves_one_step_and_follows_a_regime_change(
+    tmp_path,
+):
+    """A planted numeric effect flips sign in 2015. The old monthly-auto rule jumps between
+    half-lives month to month; the yearly rule holds one value a year, moves at most one grid
+    step a year, stays put while the regime is stable, and shortens within 2 years of the flip."""
+    from engine import config, models, pipeline
+
+    st = config.from_dict("synthetic_text", text_cfg_long(tmp_path))
+    rows = pipeline.rows(st, pipeline.build_panel(st, "tuning"))
+    feats = st.feature_set("numbers_text")
+
+    def choices(every):
+        wf = models.WalkForward(
+            model=models.ridge(10.0),
+            block="M",
+            min_train_periods=12,
+            keep=("group", "fwd_return", "rt_cost"),
+            half_life="auto",
+            auto_every=every,
+        )
+        wf.run(rows, feats, st.market.calendar)
+        ch = (
+            pd.Series({p.start_time: v for p, v in wf.chosen_.items()})
+            .sort_index()
+            .dropna()
+        )
+        return ch.groupby(ch.index.year).agg(lambda s: list(dict.fromkeys(s)))
+
+    old, new = choices("block"), choices("year")
+    assert max(len(v) for y, v in old.items() if y <= 2014) >= 3  # monthly flips
+    assert all(len(v) == 1 for v in new)  # one choice a year
+    steps = [6, 12, 24, 36]
+    yearly = {y: v[0] for y, v in new.items()}
+    years = sorted(yearly)
+    assert all(
+        abs(steps.index(yearly[a]) - steps.index(yearly[b])) <= 1
+        for a, b in itertools.pairwise(years)
+    )
+    assert yearly[2013] == yearly[2014] == yearly[2015]  # stable regime: no movement
+    assert (
+        min(yearly[2016], yearly[2017]) < yearly[2015]
+    )  # the flip shortens it within 2 years
