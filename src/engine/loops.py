@@ -80,6 +80,11 @@ class LoopsConfig:
     rollback_t: float = -1.0
     oscillation_window: int = 12
     oscillation_flips: int = 2  # sign flips within the window that freeze a field
+    # A flip counts only between refits where the weight was meaningfully non-zero: |w| above this
+    # fraction of that refit's median |w|. Inputs are centred percentile ranks, so weights share
+    # one scale and the median is the typical weight; Ridge gives no per-coefficient standard
+    # error without a bootstrap per refit. 0 = the old rule (every sign change counts).
+    oscillation_min: float = 0.5
     test_share: float = 0.4  # acceptance entities (by hash): the frozen test split
     diag_t: float = (
         1.0  # a candidate must show this much on diagnosis entities to be judged
@@ -92,6 +97,19 @@ class LoopsConfig:
     rejudge_after: int = (
         6  # a rejected candidate waits this many cycles before it can be judged again
     )
+
+
+def meaningful_signs(w: pd.Series, min_frac: float) -> pd.Series:
+    """Sign of each weight, or 0 when |w| <= min_frac x the refit's median |w| (near zero)."""
+    floor = min_frac * float(w.abs().median())
+    return pd.Series(np.where(w.abs() > floor, np.sign(w), 0.0), index=w.index)
+
+
+def count_flips(signs: list[float]) -> int:
+    """Sign changes between consecutive meaningful (non-zero) entries: near-zero refits are
+    skipped, so noise wobbling around 0 never counts as a flip."""
+    s = [x for x in signs if x != 0]
+    return sum(1 for a, b in itertools.pairwise(s) if a != b)
 
 
 def acceptance_entity(entity_id: str, share: float) -> bool:
@@ -338,15 +356,11 @@ class Coordinator:
         if not len(weights):
             return
         w = weights.iloc[-1]
-        for f, v in w.items():
+        signs = meaningful_signs(w, self.cfg.oscillation_min)
+        for f, sign in signs.items():
             base = f  # per model column: an encoded field's level effects may differ in sign by design
-            self.weight_signs.setdefault(base, []).append(float(np.sign(v)))
-            s = [
-                x
-                for x in self.weight_signs[base][-self.cfg.oscillation_window :]
-                if x != 0
-            ]
-            flips = sum(1 for a, b in itertools.pairwise(s) if a != b)
+            self.weight_signs.setdefault(base, []).append(sign)
+            flips = count_flips(self.weight_signs[base][-self.cfg.oscillation_window :])
             if flips >= self.cfg.oscillation_flips and base not in self.frozen_fields:
                 self.frozen_fields.add(base)
                 self.events.append(

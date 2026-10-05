@@ -6,7 +6,7 @@
 ON: monthly outer refit with the recency half-life fixed in advance ("auto"); the inner loop under
 the coordination rules (encodings, question splits from residual mining with the free phrase
 proposer, drops). A question split re-reads every earnings release in the manifest with Jev for
-the new question (step `jev_replay`); the number of splits the replay may propose is fixed up front
+the new question (step `jev_replay`, or --step); the number of splits the replay may propose is fixed up front
 from the estimate so the whole run fits the cap. FROZEN: the v1 questions, yearly refit.
 """
 
@@ -167,9 +167,11 @@ class ReplayText:
 
 def main(study, args) -> None:
     ledger = Ledger.from_config(study.cfg.get("spend"))
+    step = args.step or "jev_replay"
     rt = ReplayText(
         study,
         ledger,
+        step=step,
         manifest=study.cfg.get("replay", {}).get(
             "manifest", ".cache/earnings_releases.csv"
         ),
@@ -178,11 +180,12 @@ def main(study, args) -> None:
         "probe_phrase", "yes_no", "The text says: 'raised its full year'."
     )
     per_split = rt.estimate(probe)
-    cap_left = ledger.remaining("jev_replay")
+    cap_left = ledger.remaining(step)
     splits = math.floor(cap_left / per_split) if per_split > 0 else 0
     est = {
         "one_question_reread_usd": round(per_split, 2),
-        "jev_replay_left": round(cap_left, 2),
+        "step": step,
+        "cap_left": round(cap_left, 2),
         "question_splits_allowed": splits,
         "claude_replay": "not used (free phrase proposer)",
     }

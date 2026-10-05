@@ -281,3 +281,42 @@ def test_tracking_report_is_empty_before_anything_closes(small_text):
         enc, sc, w, cols, {}, co.cal, cutoff=sc["decision_time"].min()
     )
     assert rep["periods"] == 0 and rep["flags"].empty
+
+
+def test_oscillation_alarm_ignores_noise_near_zero():
+    """A: fought over by the loops (large weight driven up and down). B: pure noise near zero.
+    C, D: steady inputs that set the typical weight. The alarm fires on A only."""
+
+    class Stub(loops.Coordinator):
+        def __init__(self, min_frac):
+            self.cfg = loops.LoopsConfig(
+                oscillation_window=12, oscillation_min=min_frac
+            )
+            self.weight_signs, self.frozen_fields, self.events, self.question_texts = (
+                {},
+                set(),
+                [],
+                {},
+            )
+
+    rng = np.random.default_rng(0)
+    rows = [
+        {
+            "A": 0.15 * (1 if i % 4 < 2 else -1),
+            "B": 0.002 * rng.choice([-1, 1]),
+            "C": 0.08,
+            "D": -0.06,
+        }
+        for i in range(12)
+    ]
+    for min_frac, want in (
+        (0.5, {"A"}),
+        (0.0, {"A", "B"}),
+    ):  # 0 = the old rule: B froze too
+        co = Stub(min_frac)
+        for i, r in enumerate(rows):
+            co._oscillation(pd.DataFrame([r]), i, pd.Timestamp("2020-01-01"))
+        assert co.frozen_fields == want
+    assert (
+        loops.count_flips([1, 0, 0, 1, 0, -1]) == 1
+    )  # near-zero refits are skipped, not flips

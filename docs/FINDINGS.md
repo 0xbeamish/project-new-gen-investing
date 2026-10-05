@@ -131,6 +131,15 @@ Where there is an edge, it is about the size of the cost of trading it.
   monthly refits, where weights near zero flip often. So the replay mostly tested monthly
   auto-recency refits against yearly ones; the alarm needs a magnitude floor before the inner loop
   can be judged on real data. Check years were not opened.
+- **Replay re-run with the fixed alarm** (pre-registered; one logged test): a flip now counts only
+  between refits where |w| > 0.5 x the refit's median |w|. It froze 37 of 59 inputs, not 54, and
+  the rest is real instability: the monthly "auto" half-life choice moves between 6 and 36 months
+  and the weights swing with it (with no recency weighting the same alarm freezes 4). More fields
+  were eligible, and 33 changes were judged (drops and encodings of earnings-text fields; best t
+  2.12 against a bar of ~3.43); none was accepted. No question split was possible: the unchanged
+  rule allows cap / worst-case re-read estimate = $8 / $12.83 = 0 splits. With nothing accepted,
+  ON is the same system as before: ON minus FROZEN -0.063%/month, **t -0.79** (bar 3.43). Cost $0.
+  The ON-vs-FROZEN gap is the monthly auto-recency refit itself (more turnover, no better IC).
 - **Loops on synthetic markets** (docs/TEXT.md): tracking flags a planted over-weighted field and a
   planted U-shaped field; the ladder fixes both; when the true error is a mis-weighted numeric input
   correlated with a text field, the coordinator leaves the text question alone and the outer refit
