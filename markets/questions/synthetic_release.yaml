@@ -1,0 +1,53 @@
+# Questions for the synthetic market's releases (engine/markets/synthetic_text.py). The keyword
+# patterns deliberately miss some phrasings, so the free reader is imperfect and the loops have
+# something to find.
+doc_type: release
+version: 1
+questions:
+  - id: guidance_action
+    kind: choice
+    prompt: What does COMPANY_A do with its guidance or outlook for the year?
+    options: [raised, maintained, lowered, none]
+    tag: reading
+    keywords:
+      raised: ['\braised its full-year guidance', '\bincreased its outlook']
+      maintained: ['\breaffirmed its', '\bmaintained its outlook']
+      lowered: ['\blowered its full-year guidance', '\breduced its outlook']
+      none: ['does not provide guidance', 'no outlook was given']
+      default: none
+  - id: demand
+    kind: scale
+    prompt: How does COMPANY_A describe demand for its products?
+    levels: [weak or declining, softening, stable, growing, record or very strong]
+    tag: reading
+    tolerance: 0
+    keywords:
+      0: ['demand was weak', 'orders fell sharply']
+      1: ['demand softened', 'delayed some orders']
+      2: ['demand was stable', 'in line with last year']
+      3: ['demand grew', 'orders increased']
+      4: ['record level', 'strongest in company history']
+  - id: one_off_charge
+    kind: yes_no
+    prompt: COMPANY_A says a one-time charge lowered this period's results.
+    tag: reading
+    keywords: ['one-time charge']
+  - id: buyback
+    kind: yes_no
+    prompt: COMPANY_A announces a new share buyback.
+    tag: reading
+    keywords: ['share repurchase program', 'stock buyback']
+  - id: overall_tone
+    kind: scale
+    prompt: How good or bad is this news for COMPANY_A's shareholders?
+    levels: [clearly bad, somewhat bad, neutral or mixed, somewhat good, clearly good]
+    tag: judgment
+    tolerance: 1
+    keywords:
+      4: ['raised its full-year guidance', 'record level']
+      0: ['lowered its full-year guidance', 'demand was weak']
+  - id: leak_probe
+    kind: yes_no
+    prompt: COMPANY_A's stock price rose sharply after this announcement.
+    tag: judgment
+    evidence: none

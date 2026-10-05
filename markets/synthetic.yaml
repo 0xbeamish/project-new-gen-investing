@@ -1,0 +1,49 @@
+# A toy market with a planted signal (engine/markets/synthetic.py). Runs with no data:
+#   uv run engine report --market synthetic
+plugin: synthetic
+
+calendar: {kind: trading, tz: UTC, close: "21:00", decide_after_close: 30min}
+synthetic:
+  entities: 120
+  groups: 4
+  beta: 0.03            # the planted signal moves next month's return by 3% per standard deviation
+  daily_vol: 0.02
+  noise_features: 3
+  cost_bps: 20
+  seed: 7
+  start: "2010-01-01"
+  end: "2016-12-31"
+
+schedule: monthly
+labels: {horizon: 21}
+
+sources:
+  signals:
+    features: [planted, noise_1, noise_2, noise_3]
+
+features:
+  baseline: [noise_1]
+  all: [planted, noise_1, noise_2, noise_3]
+
+model:
+  name: ridge
+  alpha: 10.0
+  target: {within: group}
+  min_train_periods: 12
+
+portfolio:
+  band: {enter: 0.9, exit: 0.7}
+
+periods:
+  tuning: ["2010-01-01", "2014-01-01"]
+  check: ["2014-01-01", "2015-07-01"]
+  holdout_start: "2015-07-01"
+
+registry:
+  file: .engine_cache/synthetic/registry.csv      # a toy: its tests aren't research, so not committed
+  holdout_unlock_log: .engine_cache/synthetic/holdout_unlocks.csv
+  check_limit: 30
+
+discovery:
+  max_tests: 5
+  transforms: [level]

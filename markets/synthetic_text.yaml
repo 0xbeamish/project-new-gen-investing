@@ -1,0 +1,80 @@
+# A toy market whose returns depend on what its documents say (engine/markets/synthetic_text.py).
+# Runs with no data and no keys:  uv run engine demo
+plugin: synthetic_text
+
+calendar: {kind: trading, tz: UTC, close: "21:00", decide_after_close: 30min}
+synthetic_text:
+  entities: 500
+  groups: 4
+  daily_vol: 0.02
+  cost_bps: 10
+  seed: 11
+  start: "2010-01-01"
+  end: "2016-12-31"
+  label_noise: 0.1
+  rho_x_demand: 0.0
+  react: 0.03
+  regime_change: "2012-01-01"   # one_off stops mattering here: a field that becomes over-weighted
+  effects:              # next month's drift per unit of each latent fact (see the module docstring)
+    guidance: 0.02
+    demand_lin: 0.0
+    demand_u: 0.02      # a U-shape: extremes beat the middle, which a linear weight can't see
+    one_off: -0.05
+    one_off_after: 0.0
+    x: 0.01
+
+schedule: monthly
+labels: {horizon: 21}
+
+sources:
+  numbers:
+    features: [x_value, x_noise]
+  releases_text:
+    type: text
+    max_age_days: 120
+    params:
+      documents: releases
+      questions: markets/questions/synthetic_release.yaml
+      reader: {kind: keyword}
+      prefix: txt
+      change: {k: 1, min_prior: 1}
+      surprise: {keys: [group]}
+      features: [txt_guidance_action_raised, txt_guidance_action_lowered, txt_demand_level,
+                 txt_one_off_charge_p, txt_buyback_p, txt_overall_tone_level, txt_demand_chg,
+                 txt_demand_surp]
+
+features:
+  numbers: [x_value, x_noise]
+  text: [txt_guidance_action_raised, txt_guidance_action_lowered, txt_demand_level,
+         txt_one_off_charge_p, txt_buyback_p, txt_overall_tone_level]
+  numbers_text: ["@numbers", "@text"]
+  baseline: ["@numbers"]
+
+model:
+  name: ridge
+  alpha: 10.0
+  target: {within: group}
+  min_train_periods: 12
+
+portfolio:
+  band: {enter: 0.9, exit: 0.7}
+
+periods:
+  tuning: ["2010-01-01", "2015-01-01"]
+  check: ["2015-01-01", "2016-01-01"]
+  holdout_start: "2016-01-01"
+
+registry:
+  file: .engine_cache/synthetic_text/registry.csv   # a toy: its tests aren't research, so not committed
+  holdout_unlock_log: .engine_cache/synthetic_text/holdout_unlocks.csv
+  check_limit: 30
+
+text:
+  questions: markets/questions/synthetic_release.yaml
+  reader: {kind: keyword}
+  gold: 300
+  leak_probe: leak_probe
+  direction: overall_tone
+
+decider:
+  kind: none            # jev | claude need keys; the feedback note is on whenever a decider is set

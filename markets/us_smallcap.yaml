@@ -1,0 +1,171 @@
+# US small/mid caps (small/mid market values, point-in-time, delisted companies included).
+# Paths are relative to the repo root; caches live in ./.cache. Fill them with `engine fetch`
+# (SEC_USER_AGENT, EODHD_API_KEY in .env) after `python -m engine.markets.us_smallcap.universe build`.
+plugin: us_smallcap
+
+calendar:
+  kind: trading
+  tz: America/New_York
+  close: "16:00"
+  decide_after_close: 30min   # the decision day's close is known; the next session's isn't
+
+universe:
+  file: data/smallcap_universe.csv       # point-in-time quarterly list, dead companies included
+  group: sector
+  exclude_name_regex: '\bACQUISITION (?:CORP|CO|COMPANY|HOLDINGS)\b'  # SPAC shells the SIC filter missed
+
+schedule: monthly            # business month-end closes
+labels:
+  horizon: 21                # bars: one trading month
+  min_history_bars: 253      # a year of prices before the decision (momentum needs it)
+  drop_flat: true            # stale quotes (zero variance in the window) aren't prices
+  ended_if_no_bar_for_days: 10
+  winsorize: [0.01, 0.99]    # per decision time, before ranks and averages
+
+# max_age_days counts calendar days from the day a value became usable (the day AFTER filing) to the
+# decision date. The pilot counted from the filing date: its 456 / 200 days are 455 / 199 here.
+sources:
+  universe_size:
+    features: [px_log_mcap]
+  price:
+    features: [px_mom_1m, px_mom_12_1, px_vol_3m, px_off_high, px_volume_trend]
+    params: {min_history_bars: 253}
+  sec_annual:
+    max_age_days: 455
+    lookback_days: 7300
+  sec_quarterly:
+    max_age_days: 199
+    lookback_days: 7300
+  insiders:
+    params: {window_days: 182}
+  eightk_counts:
+    params: {window_days: 90}
+  earnings_text:            # earnings releases (8-K item 2.02 exhibits), masked, read by a question set
+    type: text
+    max_age_days: 400
+    lookback_days: 7300
+    params:
+      documents: sec_earnings_releases           # fetched from EDGAR with your SEC_USER_AGENT
+      questions: markets/questions/earnings_release.yaml
+      reader: {kind: keyword}                    # free; {kind: jev} or {kind: claude} with keys (estimate first)
+      step: text_read_jev                        # spend-ledger step for a paid reader
+      prefix: earn
+      change: {k: 4, min_prior: 2}               # vs the mean of the previous 4 releases (>= 2)
+      surprise: false
+      features: [earn_direction_level, earn_demand_tone_level, earn_outlook_tone_level,
+                 earn_margin_tone_level, earn_demand_tone_chg, earn_outlook_tone_chg,
+                 earn_margin_tone_chg, earn_hedging_language_level, earn_guidance_raised_p,
+                 earn_guidance_lowered_p, earn_guidance_withdrawn_p, earn_record_results_p,
+                 earn_restructuring_p, earn_impairment_p, earn_dividend_raised_p,
+                 earn_dividend_cut_p, earn_buyback_expanded_p, earn_supply_problems_p,
+                 earn_legal_issue_p, earn_leadership_change_p]
+
+features:
+  numbers: [px_mom_1m, px_mom_12_1, px_vol_3m, px_off_high, px_volume_trend, px_log_mcap,
+            revenue_growth, gross_margin, operating_margin, net_margin, roa,
+            liabilities_to_assets, cash_to_assets, rnd_intensity, capex_intensity, share_dilution,
+            q_rev_growth_yoy, q_rev_growth_qoq, q_gross_margin, q_gross_margin_chg_yoy,
+            q_op_margin, q_inventory_days, q_inventory_days_chg_yoy,
+            ins_buyers, ins_sellers, ins_officer_buyers, ins_net_usd_share,
+            k8_results, k8_executive_or_director_change, k8_material_agreement,
+            k8_acquisition_or_disposal, k8_new_debt, k8_restructuring, k8_impairment,
+            k8_auditor_change, k8_restatement, k8_delisting_notice, k8_unregistered_equity_sale,
+            k8_agreement_terminated]
+  text: [earn_direction_level, earn_demand_tone_level, earn_outlook_tone_level,
+         earn_margin_tone_level, earn_demand_tone_chg, earn_outlook_tone_chg, earn_margin_tone_chg,
+         earn_hedging_language_level, earn_guidance_raised_p, earn_guidance_lowered_p,
+         earn_guidance_withdrawn_p, earn_record_results_p, earn_restructuring_p, earn_impairment_p,
+         earn_dividend_raised_p, earn_dividend_cut_p, earn_buyback_expanded_p,
+         earn_supply_problems_p, earn_legal_issue_p, earn_leadership_change_p]
+  numbers_text: ["@numbers", "@text"]
+  baseline: ["@numbers_text"]   # what every new candidate must beat
+
+model:
+  name: ridge
+  alpha: 10.0
+  target: {within: group}       # fwd_rank: percentile within sector-month
+  block: year
+  min_train_periods: 12
+  embargo_days: 0
+  # Legacy reproduction only (see docs/ENGINE.md, "Parity"): random batches of 10 per sector-month
+  # with leftovers dropped, the target demeaned within batch, the pilot's 31-day purge, and its
+  # (unstable) order for 10-Q rows filed on the same day.
+  legacy:
+    batches: {size: 10, by: group, seed: 0}
+    purge_days: 31
+    source_params:
+      sec_quarterly: {tie_order: legacy}
+
+portfolio:
+  band: {enter: 0.9, exit: 0.7}        # V1: buy the sector top decile, hold until out of the top 30%
+  topk: {enter: 0.9}
+
+periods:
+  tuning: ["2012-01-01", "2020-01-01"]
+  check: ["2020-01-01", "2024-01-01"]
+  holdout_start: "2024-01-01"
+
+registry:
+  file: data/engine/us_smallcap/registry.csv
+  inherit: [data/registry_aggregate.csv]   # the original research's judged tests: the count continues
+  check_limit: 30
+  holdout_unlock_log: data/engine/us_smallcap/holdout_unlocks.csv
+
+discovery:
+  max_tests: 3
+  no_progress: 10
+  transforms: [level, chg3, chg12]
+  candidates: []      # e.g. {feature: q_rev_growth_yoy, transform: chg3, scope: universal}
+
+spend:                     # engine.spend: every paid call is capped per step and recorded here
+  ledger: data/costs.csv   # created on the first paid call (git-ignored)
+  funds: {typesafe: 0.0, anthropic: 0.0}   # set to what you have loaded: a paid call is refused past it
+  caps: {}                 # per-step caps (USD) over the defaults in engine/spend.py
+
+decider:                   # optional LLM decider over the model's cards; the feedback note is ON by default
+  kind: none               # none (free, the model's own pick) | jev | claude
+  model: jev-1.13.0
+  step: jev_engine_loop
+  feedback: true
+
+# Plain-language names for the decider cards and the feedback note
+feature_labels:
+  px_mom_1m: return over the last month
+  px_mom_12_1: return over the prior 11 months
+  px_vol_3m: daily volatility (3 months)
+  px_off_high: distance below 52-week high
+  px_volume_trend: trading volume vs its 6-month average
+  px_log_mcap: company size (log market value)
+  revenue_growth: annual revenue growth
+  gross_margin: gross margin
+  operating_margin: operating margin
+  net_margin: net margin
+  roa: return on assets
+  liabilities_to_assets: liabilities / assets
+  cash_to_assets: cash / assets
+  rnd_intensity: R&D / revenue
+  capex_intensity: capex / revenue
+  share_dilution: share count change (yr)
+  q_rev_growth_yoy: quarterly revenue growth vs a year ago
+  q_rev_growth_qoq: quarterly revenue growth vs last quarter
+  q_gross_margin: latest quarter gross margin
+  q_gross_margin_chg_yoy: gross margin change vs a year ago
+  q_op_margin: latest quarter operating margin
+  q_inventory_days: inventory days
+  q_inventory_days_chg_yoy: inventory days change vs a year ago
+  ins_buyers: insiders buying (6 months)
+  ins_sellers: insiders selling (6 months)
+  ins_officer_buyers: officers buying (6 months)
+  ins_net_usd_share: insider net buying share
+  k8_results: '8-Ks: results (90 days)'
+  k8_executive_or_director_change: '8-Ks: executive or director change (90 days)'
+  k8_material_agreement: '8-Ks: material agreement (90 days)'
+  k8_acquisition_or_disposal: '8-Ks: acquisition or disposal (90 days)'
+  k8_new_debt: '8-Ks: new debt (90 days)'
+  k8_restructuring: '8-Ks: restructuring (90 days)'
+  k8_impairment: '8-Ks: impairment (90 days)'
+  k8_auditor_change: '8-Ks: auditor change (90 days)'
+  k8_restatement: '8-Ks: restatement (90 days)'
+  k8_delisting_notice: '8-Ks: delisting notice (90 days)'
+  k8_unregistered_equity_sale: '8-Ks: unregistered equity sale (90 days)'
+  k8_agreement_terminated: '8-Ks: agreement terminated (90 days)'

@@ -1,0 +1,219 @@
+# Earnings releases (8-K item 2.02, exhibit 99): the pilot's v1 battery. Tone questions are judgment.
+doc_type: earnings_release
+version: 1
+questions:
+- id: relation
+  kind: choice
+  prompt: Who is this document mainly about, relative to COMPANY_A?
+  options:
+  - self
+  - competitor
+  - supplier
+  - customer
+  - partner
+  - sector
+  - macro
+  tag: reading
+  keywords:
+    self:
+    - COMPANY_A (?:announce|report|today)
+- id: direction
+  kind: scale
+  prompt: How good or bad is this news for COMPANY_A's shareholders?
+  levels:
+  - clearly bad for shareholders
+  - somewhat bad
+  - neutral or mixed
+  - somewhat good
+  - clearly good for shareholders
+  tag: judgment
+  tolerance: 1
+  keywords:
+    4:
+    - \brecord\b|strong(?:er)? than expected
+    0:
+    - net loss widened|impairment|going concern
+- id: guidance_raised
+  kind: yes_no
+  prompt: COMPANY_A raises its financial guidance or outlook for a future period.
+  tag: reading
+  keywords:
+  - \b(?:rais(?:es|ed|ing)|increas(?:es|ed|ing))\b[^.]{0,40}\b(?:guidance|outlook)
+- id: guidance_lowered
+  kind: yes_no
+  prompt: COMPANY_A lowers its financial guidance or outlook for a future period.
+  tag: reading
+  keywords:
+  - \b(?:lower(?:s|ed|ing)?|reduc(?:es|ed|ing))\b[^.]{0,40}\b(?:guidance|outlook)
+- id: guidance_withdrawn
+  kind: yes_no
+  prompt: COMPANY_A withdraws or suspends its financial guidance.
+  tag: reading
+  keywords:
+  - \b(?:withdr[ae]w\w*|suspend\w*)\b[^.]{0,40}\b(?:guidance|outlook)
+- id: outlook_tone
+  kind: scale
+  prompt: How optimistic is COMPANY_A's outlook for coming periods?
+  levels:
+  - 'pessimistic: expects things to get worse'
+  - 'cautious: flags risks or a slowdown'
+  - neutral, or no outlook given
+  - 'optimistic: expects improvement'
+  - 'very optimistic: expects strong growth'
+  tag: judgment
+  tolerance: 1
+  keywords:
+    4:
+    - strong growth
+    3:
+    - optimistic|expect(?:s|ed)? (?:continued )?(?:growth|improvement)
+    1:
+    - cautious|headwinds|slowdown
+    0:
+    - expect(?:s|ed)? (?:a )?declin
+- id: demand_tone
+  kind: scale
+  prompt: How does COMPANY_A describe demand for its products or services?
+  levels:
+  - weak or declining
+  - softening
+  - stable or not discussed
+  - growing
+  - very strong or record
+  tag: judgment
+  tolerance: 1
+  keywords:
+    4:
+    - record demand|very strong demand
+    3:
+    - (?:growing|strong|increased) demand
+    1:
+    - softening demand|demand softened
+    0:
+    - (?:weak|declining) demand
+- id: margin_tone
+  kind: scale
+  prompt: How does COMPANY_A describe its profit margins?
+  levels:
+  - falling sharply
+  - under pressure
+  - stable or not discussed
+  - improving
+  - expanding strongly
+  tag: judgment
+  tolerance: 1
+  keywords:
+    4:
+    - record (?:gross )?margin|margin expansion
+    3:
+    - margins? improved|improved (?:gross )?margin
+    1:
+    - margin pressure|pressure on margins
+    0:
+    - margins? (?:declined|fell) sharply
+- id: primary_driver
+  kind: choice
+  prompt: What does COMPANY_A say mainly drove this period's results?
+  options:
+  - volume
+  - pricing
+  - costs
+  - one_offs
+  - acquisitions
+  - macro
+  - unclear
+  tag: reading
+  keywords:
+    volume:
+    - higher (?:volume|units)|unit growth
+    pricing:
+    - price increases|pricing
+    costs:
+    - cost (?:reductions|savings)
+    one_offs:
+    - one-time
+    acquisitions:
+    - acquisition of
+    macro:
+    - foreign currency|exchange rates|economy
+    default: unclear
+- id: record_results
+  kind: yes_no
+  prompt: COMPANY_A reports a record result (for example record revenue or record earnings).
+  tag: reading
+  keywords:
+  - \brecord (?:revenue|sales|earnings|quarter|results)
+- id: restructuring
+  kind: yes_no
+  prompt: COMPANY_A announces or discusses restructuring, layoffs or facility closures.
+  tag: reading
+  keywords:
+  - restructuring|reduction in force|layoffs?|facility closure
+- id: impairment
+  kind: yes_no
+  prompt: COMPANY_A reports an impairment or write-down of assets or goodwill.
+  tag: reading
+  keywords:
+  - impairment|write-?down
+- id: dividend_raised
+  kind: yes_no
+  prompt: COMPANY_A raises its dividend.
+  tag: reading
+  keywords:
+  - (?:increase[sd]?|rais(?:es|ed)) (?:its |the )?(?:quarterly )?dividend
+- id: buyback_expanded
+  kind: yes_no
+  prompt: COMPANY_A announces a new share buyback or increases an existing one.
+  tag: reading
+  keywords:
+  - (?:share|stock) (?:repurchase|buyback) (?:program|authori[sz]ation)
+- id: dividend_cut
+  kind: yes_no
+  prompt: COMPANY_A cuts or suspends its dividend.
+  tag: reading
+  keywords:
+  - (?:suspend\w*|cut|reduc\w*) (?:its |the )?(?:quarterly )?dividend
+- id: supply_problems
+  kind: yes_no
+  prompt: COMPANY_A says supply-chain or input-cost problems hurt its results.
+  tag: reading
+  keywords:
+  - supply chain|input costs?|raw material costs
+- id: fx_headwind
+  kind: yes_no
+  prompt: COMPANY_A says currency exchange rates hurt its results.
+  tag: reading
+  keywords:
+  - (?:unfavorable|negative) (?:foreign )?(?:currency|exchange)
+- id: legal_issue
+  kind: yes_no
+  prompt: COMPANY_A mentions litigation, a regulatory investigation or a government inquiry.
+  tag: reading
+  keywords:
+  - litigation|lawsuit|investigation|subpoena
+- id: leadership_change
+  kind: yes_no
+  prompt: COMPANY_A announces a change of its CEO or CFO.
+  tag: reading
+  keywords:
+  - (?:new|interim) (?:chief executive|chief financial|CEO|CFO)
+- id: adjusted_emphasis
+  kind: yes_no
+  prompt: COMPANY_A emphasizes adjusted or non-GAAP figures over GAAP figures.
+  tag: reading
+  keywords:
+  - \badjusted (?:EBITDA|net income|EPS)|non-GAAP
+- id: hedging_language
+  kind: scale
+  prompt: How much hedging or uncertain language does COMPANY_A use?
+  levels:
+  - 'none: direct and definite'
+  - a little
+  - some
+  - a lot
+  - 'pervasive: most statements are qualified'
+  tag: judgment
+  tolerance: 1
+  keywords:
+    3:
+    - \bmay\b[^.]{0,80}\bcould\b

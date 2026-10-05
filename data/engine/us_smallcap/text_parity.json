@@ -1,0 +1,274 @@
+{
+ "version": "v1 via engine.text",
+ "summary": {
+  "S": 0.44573394234429886,
+  "A": 0.15548445399448857,
+  "B": 0.7196550596123861,
+  "C": 0.6169921422886144,
+  "D": 0.3407719855627143,
+  "E": 0.0
+ },
+ "components": {
+  "A_gold": 0.15548445399448857,
+  "B_consistency": 0.7196550596123861,
+  "invariance": {
+   "paraphrase": 0.9090909090909091,
+   "mask_alt": 0.9127906976744186,
+   "order": 0.8769633507853403
+  },
+  "counterfactual_pass": 0.1797752808988764,
+  "unmasked_vs_masked_stability": 0.880248833592535,
+  "C_reaction": {
+   "base": {
+    "R2_mag": 0.09307329160527944,
+    "IC_react": -0.0070417831119020235,
+    "IC_vol": 0.3694093514461318,
+    "IC_drift": 0.016982352786667536,
+    "drift_spread_net": 0.0032587135673078655
+   },
+   "prior": {
+    "R2_mag": 0.11739236970793843,
+    "IC_react": 0.019354528359048224,
+    "IC_vol": 0.4138305985381345,
+    "IC_drift": 0.014532366983729263,
+    "drift_spread_net": 0.0018206055279979799
+   },
+   "card": {
+    "R2_mag": 0.12909158393679987,
+    "IC_react": 0.16341684635991596,
+    "IC_vol": 0.4317869637026216,
+    "IC_drift": 0.03157096626186498,
+    "drift_spread_net": 0.0011740180034297762
+   },
+   "gain_vs_prior": {
+    "R2_mag": 0.011699214228861443,
+    "IC_react": 0.14406231800086775,
+    "IC_drift": 0.017038599278135717
+   },
+   "prior_vs_base": {
+    "R2_mag": 0.024319078102658986,
+    "IC_react": 0.02639631147095025,
+    "IC_drift": -0.002449985802938273
+   },
+   "IC_drift_se": 0.019972058663135294,
+   "n_events": 2510
+  },
+  "C_reaction_reading_features_only": {
+   "base": {
+    "R2_mag": 0.09307329160527944,
+    "IC_react": -0.0070417831119020235,
+    "IC_vol": 0.3694093514461318,
+    "IC_drift": 0.016982352786667536,
+    "drift_spread_net": 0.0032587135673078655
+   },
+   "prior": {
+    "R2_mag": 0.11739236970793843,
+    "IC_react": 0.019354528359048224,
+    "IC_vol": 0.4138305985381345,
+    "IC_drift": 0.014532366983729263,
+    "drift_spread_net": 0.0018206055279979799
+   },
+   "card": {
+    "R2_mag": 0.13053916892034667,
+    "IC_react": 0.11531665661415909,
+    "IC_vol": 0.42725005529148563,
+    "IC_drift": 0.017852668823858345,
+    "drift_spread_net": -0.0024255762430642896
+   },
+   "gain_vs_prior": {
+    "R2_mag": 0.013146799212408244,
+    "IC_react": 0.09596212825511086,
+    "IC_drift": 0.003320301840129082
+   },
+   "prior_vs_base": {
+    "R2_mag": 0.024319078102658986,
+    "IC_react": 0.02639631147095025,
+    "IC_drift": -0.002449985802938273
+   },
+   "IC_drift_se": 0.019972058663135294,
+   "n_events": 2510
+  },
+  "E_coverage": 0.0
+ },
+ "per_field": {
+  "relation": {
+   "skill": 0.0,
+   "brier": 0.2084510752688172,
+   "covered": true,
+   "n": 186
+  },
+  "is_subject": {
+   "skill": 0.0,
+   "brier": 0.11438010752688171,
+   "covered": true,
+   "n": 186
+  },
+  "event_type": {
+   "skill": 0.0,
+   "covered": false,
+   "n": 186
+  },
+  "new_information": {
+   "skill": 0.0,
+   "covered": false,
+   "n": 170
+  },
+  "certainty": {
+   "skill": 0.0,
+   "covered": false,
+   "n": 171
+  },
+  "time_to_impact": {
+   "skill": 0.0,
+   "covered": false,
+   "n": 171
+  },
+  "core_asset": {
+   "skill": 0.0,
+   "covered": false,
+   "n": 171
+  },
+  "vs_own_guidance": {
+   "skill": 0.0,
+   "covered": false,
+   "n": 44
+  },
+  "guidance_action": {
+   "skill": 0.2887257062146894,
+   "brier": 0.5202295454545454,
+   "covered": true,
+   "n": 44
+  },
+  "one_off_help": {
+   "skill": 0.0,
+   "covered": false,
+   "n": 44
+  },
+  "one_off_hurt": {
+   "skill": 0.11990890269151144,
+   "brier": 0.2195681818181818,
+   "covered": true,
+   "n": 44
+  },
+  "role": {
+   "skill": 0.6863586776859504,
+   "brier": 0.21025263157894736,
+   "covered": true,
+   "n": 19
+  },
+  "change_type": {
+   "skill": 0.7926226277372264,
+   "brier": 0.15739999999999998,
+   "covered": true,
+   "n": 19
+  },
+  "effective_immediately": {
+   "skill": 0.6447730769230768,
+   "brier": 0.07675263157894736,
+   "covered": true,
+   "n": 19
+  },
+  "successor_named": {
+   "skill": 0.5984910256410256,
+   "brier": 0.08675263157894736,
+   "covered": true,
+   "n": 19
+  },
+  "planned_succession": {
+   "skill": 0.71519,
+   "brier": 0.04733684210526317,
+   "covered": true,
+   "n": 19
+  },
+  "investigation": {
+   "skill": 0.0,
+   "brier": 0.0018631578947368417,
+   "covered": true,
+   "n": 19
+  },
+  "offering_type": {
+   "skill": 0.0,
+   "covered": false,
+   "n": 18
+  },
+  "stage": {
+   "skill": 0.0,
+   "covered": false,
+   "n": 33
+  },
+  "primary_endpoint": {
+   "skill": 0.0,
+   "brier": 0.7755333333333334,
+   "covered": true,
+   "n": 33
+  },
+  "randomized_controlled": {
+   "skill": 0.0,
+   "covered": false,
+   "n": 33
+  },
+  "safety_problem": {
+   "skill": 0.0,
+   "covered": false,
+   "n": 33
+  },
+  "beats_existing": {
+   "skill": 0.0,
+   "covered": false,
+   "n": 33
+  },
+  "next_step_dated": {
+   "skill": 0.8184636029411765,
+   "brier": 0.04534242424242425,
+   "covered": true,
+   "n": 33
+  },
+  "small_study": {
+   "skill": 0.0,
+   "covered": false,
+   "n": 33
+  },
+  "reg_outcome": {
+   "skill": 0.0,
+   "brier": 0.28510303030303025,
+   "covered": true,
+   "n": 33
+  },
+  "binding": {
+   "skill": 0.0,
+   "covered": false,
+   "n": 25
+  },
+  "upfront_payment": {
+   "skill": 0.0,
+   "covered": false,
+   "n": 25
+  },
+  "stance": {
+   "skill": 0.0,
+   "brier": 0.8241617080000001,
+   "covered": true,
+   "n": 15
+  },
+  "position": {
+   "skill": 0.0,
+   "covered": false,
+   "n": 11
+  }
+ },
+ "gates": {
+  "leak": {
+   "auc_direction": 0.5665244841040022,
+   "auc_leak_probe": 0.5567085530527021,
+   "excess": -0.009815931051300186,
+   "pass": true
+  },
+  "cost_usd_per_1k_docs": 0.10310093896713615
+ },
+ "n": {
+  "gold_dev": 186,
+  "probes": 700,
+  "market_dev": 2510,
+  "jev_docs": 3408
+ }
+}

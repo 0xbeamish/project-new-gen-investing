@@ -1,0 +1,563 @@
+# 8-K event cards (scoring v2, revision 2026-10-04): one doc_type per event family, sharing the
+# core block. Judgment fields (direction, scale_to_company, surprise, population,
+# counterparty_size, demand_direction) are never in the answer key; markets grade them.
+version: 1
+blocks:
+  core:
+  - id: relation
+    kind: choice
+    prompt: Who is this text mainly about, relative to COMPANY_A?
+    options:
+    - self
+    - competitor
+    - customer
+    - supplier
+    - partner
+    - sector
+    - macro
+    - not_about_company_a
+    tag: reading
+    keywords:
+      self:
+      - COMPANY_A (?:announce|report|today)
+  - id: is_subject
+    kind: yes_no
+    prompt: COMPANY_A is the main subject of this text, not only mentioned in passing or in a list.
+    tag: reading
+    keywords:
+    - COMPANY_A (?:announce|report|today|said|reported)
+  - id: event_type
+    kind: choice
+    prompt: What kind of event does this text mainly report about COMPANY_A?
+    options:
+    - results
+    - guidance
+    - trial_result
+    - regulatory_decision
+    - regulatory_filing
+    - contract_or_order
+    - partnership_or_license
+    - acquisition
+    - being_acquired
+    - equity_offering
+    - debt_financing
+    - executive_change
+    - legal_or_investigation
+    - product_launch
+    - restructuring
+    - analyst_or_rating
+    - opinion_only
+    - other
+    tag: reading
+    keywords:
+      results:
+      - (?:first|second|third|fourth)[- ]quarter|fiscal (?:year|quarter) results|reported (?:revenue|net
+        income)
+      guidance:
+      - \b(?:guidance|outlook)\b
+      trial_result:
+      - primary endpoint|topline|phase\s*(?:1|2|3|i{1,3})\b
+      regulatory_decision:
+      - \bFDA approv|complete response letter|marketing authori[sz]ation
+      contract_or_order:
+      - \b(?:contract|purchase order|awarded)\b
+      partnership_or_license:
+      - collaboration agreement|license agreement|partnership
+      acquisition:
+      - (?:agreement|definitive agreement) to acquire|completed (?:the|its) acquisition
+      being_acquired:
+      - to be acquired|agreement and plan of merger
+      equity_offering:
+      - public offering|private placement|registered direct|at-the-market
+      debt_financing:
+      - credit (?:agreement|facility)|senior notes|term loan
+      executive_change:
+      - chief (?:executive|financial) officer|\bresign|\bappoint
+      legal_or_investigation:
+      - lawsuit|investigation|subpoena|class action
+      restructuring:
+      - restructuring|reduction in force|layoffs?
+      default: other
+  - id: direction
+    kind: scale
+    prompt: How good or bad is this news for COMPANY_A's shareholders?
+    levels:
+    - clearly bad for shareholders
+    - somewhat bad
+    - neutral or mixed
+    - somewhat good
+    - clearly good
+    tag: judgment
+    tolerance: 1
+    keywords:
+      4:
+      - \brecord\b|strong(?:er)? than expected
+      0:
+      - net loss widened|impairment|going concern
+  - id: new_information
+    kind: yes_no
+    prompt: The text announces something about COMPANY_A that has not been announced before, rather than
+      repeating, updating or summarizing earlier news.
+    tag: reading
+    keywords:
+    - \btoday announced\b|\bannounced today\b
+  - id: certainty
+    kind: scale
+    prompt: How final is the main outcome the text reports?
+    levels:
+    - rumor or speculation
+    - a plan, intention or proposal
+    - early or partial results, or a non-binding agreement
+    - final results or a binding agreement
+    - completed, approved or closed
+    tag: reading
+    tolerance: 1
+    keywords:
+      4:
+      - \bcompleted\b|\bclosed\b|\bapproved\b
+      3:
+      - definitive agreement|final results|entered into
+      2:
+      - preliminary|interim|topline|non-binding
+      1:
+      - \bplans? to\b|intends? to|proposal
+      0:
+      - rumou?r|speculat
+  - id: time_to_impact
+    kind: choice
+    prompt: When does the text say the main event will affect COMPANY_A's revenue or costs?
+    options:
+    - already_affecting
+    - within_a_year
+    - one_to_three_years
+    - more_than_three_years_or_not_said
+    tag: reading
+    keywords:
+      already_affecting:
+      - (?:this|the) quarter|year to date
+      within_a_year:
+      - next (?:quarter|twelve months)|later this year
+      default: more_than_three_years_or_not_said
+  - id: scale_to_company
+    kind: scale
+    prompt: How large is this event relative to COMPANY_A's whole business, as the text describes it?
+    levels:
+    - 'trivial: a side matter'
+    - 'minor: one small product, contract or person'
+    - 'moderate: a meaningful product line, customer or executive'
+    - 'major: COMPANY_A''s main product, largest customer or chief executive'
+    - 'decisive: the outcome largely decides COMPANY_A''s future, such as its only product approved or
+      failed, or a sale of the company'
+    tag: judgment
+    tolerance: 1
+  - id: core_asset
+    kind: yes_no
+    prompt: The product, contract or business in this text is described as COMPANY_A's main, lead or most
+      advanced one.
+    tag: reading
+    keywords:
+    - \blead (?:product|program|candidate|asset)\b|most advanced
+  trial:
+  - id: stage
+    kind: choice
+    prompt: What stage of development is the study or product in this text?
+    options:
+    - preclinical
+    - phase_1
+    - phase_2
+    - phase_3_or_pivotal
+    - regulatory_submission
+    - approval_decision
+    - post_approval
+    - not_a_study
+    tag: reading
+    keywords:
+      phase_3_or_pivotal:
+      - phase\s*(?:3|iii)\b|pivotal
+      phase_2:
+      - phase\s*(?:2|ii)\b|phase\s*2[ab]
+      phase_1:
+      - phase\s*(?:1|i)\b|phase\s*1[ab]
+      preclinical:
+      - preclinical
+      regulatory_submission:
+      - (?:NDA|BLA) submission|submitted (?:a|an|the) (?:NDA|BLA)
+      approval_decision:
+      - \bFDA approv|complete response letter
+      default: not_a_study
+  - id: primary_endpoint
+    kind: choice
+    prompt: What does the text say about the study's primary endpoint? met_with_significance = states
+      statistical significance or a p-value below 0.05; not_reported = interim, safety-only, or no primary
+      endpoint named.
+    options:
+    - met_with_significance
+    - met_no_significance_stated
+    - mixed_or_partly_met
+    - not_met
+    - not_reported
+    tag: reading
+    keywords:
+      met_with_significance:
+      - statistically significant|p\s*[<=]\s*0?\.0[0-4]
+      met_no_significance_stated:
+      - (?:met|achieved) (?:its|the) primary
+      not_met:
+      - did not (?:meet|achieve)|failed to (?:meet|achieve)
+      default: not_reported
+  - id: randomized_controlled
+    kind: yes_no
+    prompt: The study compared the treatment with placebo or another treatment in randomized groups.
+    tag: reading
+    keywords:
+    - randomi[sz]ed|placebo-controlled
+  - id: population
+    kind: scale
+    prompt: How many patients have the condition this product treats, as the text describes it?
+    levels:
+    - rare or orphan
+    - uncommon
+    - a defined specialty population
+    - common
+    - very common, affecting a large share of adults
+    tag: judgment
+    tolerance: 1
+  - id: safety_problem
+    kind: yes_no
+    prompt: The text reports a serious safety problem with the product, such as deaths, serious side effects
+      or a clinical hold.
+    tag: reading
+    keywords:
+    - clinical hold|serious adverse event|\bdeaths?\b
+  - id: beats_existing
+    kind: yes_no
+    prompt: The text says the product performed better than an approved treatment.
+    tag: reading
+    keywords:
+    - superior to|outperformed
+  - id: next_step_dated
+    kind: yes_no
+    prompt: The text names a specific upcoming date, month or quarter for the next regulatory step or
+      data release.
+    tag: reading
+    keywords:
+    - (?:first|second|third|fourth) quarter of 20\d\d|(?:in|by) (?:early|mid|late)[- ]20\d\d|PDUFA (?:target
+      action )?date
+  - id: small_study
+    kind: yes_no
+    prompt: The text describes a study with fewer than 50 patients.
+    tag: reading
+    keywords:
+    - \bn\s*=\s*[1-4]?\d\b|\b[1-4]?\d (?:patients|subjects)\b
+  - id: reg_outcome
+    kind: choice
+    prompt: If the text reports a regulatory decision, what was it?
+    options:
+    - approved
+    - approved_with_restrictions
+    - delayed
+    - rejected_or_complete_response_letter
+    - advisory_vote_for
+    - advisory_vote_against
+    - no_regulatory_decision
+    tag: reading
+    keywords:
+      approved:
+      - \bapproved\b
+      rejected_or_complete_response_letter:
+      - complete response letter
+      delayed:
+      - extended the (?:PDUFA|review)
+      default: no_regulatory_decision
+  earnings:
+  - id: vs_own_guidance
+    kind: choice
+    prompt: How does COMPANY_A say this period's results compare with its own earlier guidance or outlook?
+    options:
+    - above
+    - at_high_end
+    - within
+    - at_low_end
+    - below
+    - not_stated
+    tag: reading
+    keywords:
+      above:
+      - (?:above|exceed\w*) (?:our |its )?(?:previous |prior )?(?:guidance|outlook)
+      at_high_end:
+      - high end of (?:our |its |the )?(?:guidance|range)
+      within:
+      - within (?:our|its|the) (?:guidance|range)
+      at_low_end:
+      - low end of (?:our |its |the )?(?:guidance|range)
+      below:
+      - below (?:our|its|the) (?:guidance|range|outlook)
+      default: not_stated
+  - id: guidance_action
+    kind: choice
+    prompt: What does COMPANY_A do with its guidance or outlook for future periods in this text?
+    options:
+    - raised
+    - maintained
+    - lowered
+    - introduced
+    - withdrawn
+    - none
+    tag: reading
+    keywords:
+      raised:
+      - \b(?:rais(?:es|ed|ing)|increas(?:es|ed|ing))\b[^.]{0,40}\b(?:guidance|outlook)
+      lowered:
+      - \b(?:lower(?:s|ed|ing)?|reduc(?:es|ed|ing))\b[^.]{0,40}\b(?:guidance|outlook)
+      withdrawn:
+      - \b(?:withdr[ae]w\w*|suspend\w*)\b[^.]{0,40}\b(?:guidance|outlook)
+      maintained:
+      - \b(?:reaffirm\w*|reiterat\w*|maintain\w*)\b[^.]{0,40}\b(?:guidance|outlook)
+      introduced:
+      - \b(?:initiat\w*|introduc\w*|issu(?:es|ed|ing))\b[^.]{0,30}\b(?:guidance|outlook)
+      default: none
+  - id: one_off_help
+    kind: yes_no
+    prompt: COMPANY_A says a one-time item, gain or tax benefit lifted this period's results.
+    tag: reading
+    keywords:
+    - one-time (?:gain|benefit)|tax benefit|gain on (?:the )?sale
+  - id: one_off_hurt
+    kind: yes_no
+    prompt: COMPANY_A says a one-time charge or item lowered this period's results.
+    tag: reading
+    keywords:
+    - one-time (?:charge|item)|impairment|restructuring charge|non-recurring (?:charge|expense)
+  - id: demand_direction
+    kind: scale
+    prompt: How does COMPANY_A describe demand for its products or services?
+    levels:
+    - weak or declining
+    - softening
+    - stable or not discussed
+    - growing
+    - very strong or record
+    tag: judgment
+    tolerance: 1
+    keywords:
+      4:
+      - record demand|strong demand
+      0:
+      - (?:weak|declining|soft) demand
+  contract:
+  - id: binding
+    kind: choice
+    prompt: How binding is the agreement or order in this text?
+    options:
+    - letter_of_intent_or_mou
+    - definitive_agreement
+    - order_received
+    - completed
+    - not_a_contract
+    tag: reading
+    keywords:
+      letter_of_intent_or_mou:
+      - memorandum of understanding|letter of intent|non-binding
+      definitive_agreement:
+      - definitive agreement|entered into (?:an|a) agreement
+      order_received:
+      - purchase order|\bawarded\b|received an order
+      completed:
+      - completed the
+      default: not_a_contract
+  - id: counterparty_size
+    kind: scale
+    prompt: How large is the other party?
+    levels:
+    - not named
+    - a small or private firm
+    - a mid-sized firm
+    - a large well-known company
+    - a national government or one of the largest companies in its industry
+    tag: judgment
+    tolerance: 1
+  - id: upfront_payment
+    kind: yes_no
+    prompt: COMPANY_A receives an upfront payment.
+    tag: reading
+    keywords:
+    - upfront payment|up-front payment
+  financing:
+  - id: offering_type
+    kind: choice
+    prompt: What kind of financing does this text describe?
+    options:
+    - underwritten_public
+    - at_the_market_program
+    - private_placement_or_pipe
+    - registered_direct
+    - convertible
+    - debt_or_credit_facility
+    - not_an_offering
+    tag: reading
+    keywords:
+      underwritten_public:
+      - underwritten (?:public )?offering
+      at_the_market_program:
+      - at-the-market|at the market
+      private_placement_or_pipe:
+      - private placement
+      registered_direct:
+      - registered direct
+      convertible:
+      - convertible (?:senior )?notes
+      debt_or_credit_facility:
+      - credit (?:agreement|facility)|term loan
+      default: not_an_offering
+  exec:
+  - id: role
+    kind: choice
+    prompt: Which role is mainly affected?
+    options:
+    - ceo
+    - cfo
+    - other_officer
+    - director
+    - compensation_only
+    tag: reading
+    keywords:
+      ceo:
+      - chief executive officer|\bCEO\b
+      cfo:
+      - chief financial officer|\bCFO\b
+      director:
+      - \bdirector\b|\bboard\b
+      other_officer:
+      - chief operating officer|general counsel|president
+  - id: change_type
+    kind: choice
+    prompt: What kind of change is this?
+    options:
+    - retirement
+    - resignation
+    - termination
+    - appointment
+    - compensation
+    - other
+    tag: reading
+    keywords:
+      termination:
+      - terminat|\bremov|separation
+      resignation:
+      - \bresign
+      retirement:
+      - \bretire
+      appointment:
+      - appoint|\bnamed\b|elected|promot
+      compensation:
+      - compensation|bonus|salary
+  - id: effective_immediately
+    kind: yes_no
+    prompt: The departure or change takes effect immediately.
+    tag: reading
+    keywords:
+    - effective immediately
+  - id: successor_named
+    kind: yes_no
+    prompt: A permanent successor is named in this document.
+    tag: reading
+    keywords:
+    - (?:appointed|named) [^.]{0,60}(?:as|to serve as) (?:the )?(?:new )?(?:chief|president)
+  - id: planned_succession
+    kind: yes_no
+    prompt: The document describes the change as part of a planned succession.
+    tag: reading
+    keywords:
+    - succession plan|planned (?:transition|succession)
+  - id: investigation
+    kind: yes_no
+    prompt: The change is linked to an investigation, misconduct or an accounting review.
+    tag: reading
+    keywords:
+    - investigation|misconduct|accounting review
+  - id: surprise
+    kind: scale
+    prompt: How unexpected does this change appear?
+    levels:
+    - fully expected and long planned
+    - mostly expected
+    - neither
+    - somewhat sudden
+    - abrupt and unexplained
+    tag: judgment
+    tolerance: 1
+    keywords:
+      4:
+      - effective immediately
+      0:
+      - planned (?:transition|succession)|\bretire
+  short:
+  - id: stance
+    kind: choice
+    prompt: What stance does this text take toward COMPANY_A?
+    options:
+    - not_about_company_a
+    - negative
+    - neutral_or_factual
+    - positive
+    - hype_or_promotion
+    tag: reading
+    keywords:
+      negative:
+      - \b(?:plunge|falls?|downgrade|lawsuit|miss)
+      positive:
+      - \b(?:soar|jumps?|upgrade|beat|record)
+      hype_or_promotion:
+      - to the moon|🚀
+      default: neutral_or_factual
+  reddit:
+  - id: position
+    kind: choice
+    prompt: What does the author say about their own position in COMPANY_A?
+    options:
+    - says_owns_or_bought
+    - says_short_or_sold
+    - says_plans_to_buy
+    - none_stated
+    tag: reading
+    keywords:
+      says_owns_or_bought:
+      - \bI (?:own|bought|hold)\b|my (?:shares|position)
+      says_short_or_sold:
+      - \bI (?:sold|shorted)\b
+      says_plans_to_buy:
+      - \b(?:will|going to) buy\b
+      default: none_stated
+doc_types:
+  earnings:
+  - core
+  - earnings
+  trial:
+  - core
+  - trial
+  contract:
+  - core
+  - contract
+  financing:
+  - core
+  - financing
+  exec:
+  - core
+  - exec
+  ma:
+  - core
+  legal_restructuring:
+  - core
+  headline:
+  - core.relation
+  - core.is_subject
+  - core.event_type
+  - core.direction
+  - short
+  reddit:
+  - core.relation
+  - core.is_subject
+  - core.event_type
+  - core.direction
+  - short
+  - reddit
