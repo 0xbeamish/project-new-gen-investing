@@ -1,5 +1,5 @@
 [project]
-name = "signal-engine"
+name = "project-new-gen-fund"
 version = "0.1.0"
 description = "Point-in-time signal research for numbers and text: one scorer, a registry of every test, loops that know which loop owns an error"
 readme = "README.md"
