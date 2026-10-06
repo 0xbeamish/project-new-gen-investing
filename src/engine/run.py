@@ -17,6 +17,9 @@ Market YAML keys (markets/us_smallcap.yaml is a full example, markets/csv_exampl
   cohort_test  optional: a pre-registered long-horizon test (see CohortTest)
   spend        ledger path, caps {step: usd}, funds {provider: usd} (engine.spend)
   decider      kind (none | jev | claude) + options (engine.decide)
+  loop         `engine loop` settings: name (to --log it), features, years, refit, recency, band,
+               persist_k, cooldown, question_splits (engine.improve.loop_settings)
+  results_dir  where `engine loop` writes its CSVs (default results/<market>)
 
 A candidate (test, discover) = one feature + a transform + a scope:
   level | chg<k> (change vs k decision periods earlier) | pct<k> | log;  universal | one group

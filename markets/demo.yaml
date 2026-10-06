@@ -78,3 +78,9 @@ text:
 
 decider:
   kind: none            # jev | claude need keys (uv sync --extra llm); the note is on by default
+
+loop:                   # `engine loop`: the feedback loop over the tuning years (settings fixed in advance)
+  features: numbers_text
+  refit: M              # the outer loop refits every month
+  recency: auto         # the ON system's recency half-life, chosen once a year
+  question_splits: 3    # at most this many question splits (free keyword re-reads)

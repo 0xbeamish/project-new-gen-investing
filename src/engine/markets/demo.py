@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import zlib
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -534,3 +535,44 @@ def eval_sets(market: Demo, end=None, n_gold: int = 300, seed: int = 0):
         direction_question="overall_tone",
         names=dict(market.names),
     )
+
+
+# The feedback loop's demo scenarios (engine demo, section 6; tests/test_improve.py)
+LOOP_SCENARIOS = {
+    # x_value starts to matter in 2012 while a one-time charge stops mattering; demand pays at both
+    # extremes (a U a linear weight can't see)
+    "regime": {
+        "regime_change": "2012-01-01",
+        "effects": {
+            "guidance": 0.02,
+            "demand_u": 0.02,
+            "one_off": -0.05,
+            "one_off_after": 0.0,
+            "x": 0.0,
+            "x_after": 0.03,
+        },
+    },
+    # the trap: x stops mattering in 2012, and text demand is 0.8 correlated with x while its own
+    # small effect never changes; the error is OUTER, so the text question must be left alone
+    "trap": {
+        "regime_change": "2012-01-01",
+        "rho_x_demand": 0.8,
+        "effects": {"guidance": 0.02, "demand_lin": 0.006, "x": 0.06, "x_after": 0.0},
+    },
+}
+
+
+def loop_scenario(name: str, tmp_dir, entities: int = 300) -> dict:
+    """markets/demo.yaml set up for one LOOP_SCENARIOS case, with its state in tmp_dir."""
+    from engine import run
+
+    cfg = run.read_config("demo")
+    cfg["demo"] = cfg["demo"] | {"entities": entities, "cost_bps": 5} | LOOP_SCENARIOS[name]
+    cfg["registry"] = {
+        "file": str(Path(tmp_dir) / "registry.csv"),
+        "holdout_unlock_log": str(Path(tmp_dir) / "unlocks.csv"),
+    }
+    cfg["cache_dir"] = str(Path(tmp_dir) / "cache")
+    cfg["results_dir"] = str(Path(tmp_dir) / "results")
+    cfg["loop"] = cfg.get("loop", {}) | {"years": [2011, 2014]}
+    return cfg

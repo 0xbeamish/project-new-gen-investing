@@ -643,3 +643,48 @@ def run_decider(
         name = f"decider:{kind}{'+feedback' if fb else ''} vs model top pick"
         res["registry"] = log_decider_test(study, g, name, note)
     return res
+
+
+# ---------------------------------------------------------------- the decider inside the feedback loop
+def over_loop(study, co, times: list, meta: dict, dec, feedback: bool = True) -> pd.DataFrame:
+    """Cards from the loop's own weights each period, the feedback note, the decider's picks.
+    The decider never changes weights, so running it after the loops is the same as running it
+    inside them."""
+    from engine.improve import MAX_TIME, MIN_TIME
+
+    on = co.stitched()
+    on = on[on["decision_time"].isin(times)]
+    if on.empty:
+        return pd.DataFrame()
+    b = batches(on, 10, 0).reset_index(drop=True)
+    b["rt_cost"] = b["rt_cost"].fillna(b["rt_cost"].median())
+    tl = co.timeline or [(MIN_TIME, co.cur)]
+    contrib, raw, feats = [], [], []
+    rows = co.scores(co.cur)[2].copy()
+    for i, (t0, c) in enumerate(tl):
+        t1 = tl[i + 1][0] if i + 1 < len(tl) else MAX_TIME
+        _, w, enc, cols = co.scores(c)
+        seg = enc[(enc["decision_time"] >= t0) & (enc["decision_time"] < t1)]
+        key = pd.MultiIndex.from_frame(seg[["entity_id", "decision_time"]])
+        ct = model.contributions(seg, cols, w, co.cal)
+        contrib.append(ct.set_axis(key[seg.index.get_indexer(ct.index)]))
+        raw.append(seg[cols].set_axis(key))
+        feats += [x for x in cols if x not in feats]
+        rows = rows.assign(**{x: enc[x] for x in cols if x not in rows})
+    idx = pd.MultiIndex.from_frame(b[["entity_id", "decision_time"]])
+    contrib = pd.concat(contrib).reindex(columns=feats)
+    contrib = contrib[~contrib.index.duplicated(keep="last")].reindex(idx).fillna(0.0)
+    raw = pd.concat(raw).reindex(columns=feats)
+    raw = raw[~raw.index.duplicated(keep="last")].reindex(idx)
+    labels = feature_labels(study, meta)
+    return run_batches(
+        dec,
+        b,
+        rows,
+        contrib.reset_index(drop=True),
+        raw.reset_index(drop=True),
+        feats,
+        labels,
+        meta,
+        feedback=feedback,
+    )

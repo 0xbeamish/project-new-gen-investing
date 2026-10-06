@@ -9,3 +9,4 @@ data/smallcap_universe.csv
 data/*_universe*.csv
 .pytest_cache/
 .ruff_cache/
+results/

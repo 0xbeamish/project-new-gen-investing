@@ -26,8 +26,9 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pandas as pd
@@ -473,3 +474,139 @@ def freeze(qsets: dict, path: Path, mask_version: int = 2) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
     return hashlib.sha256(text.encode()).hexdigest()
+
+
+# ---------------------------------------------------------------- the feedback loop's question rung
+class PhraseSplitter:
+    """Rung 3 of the feedback loop's inner step, for any text source: split a question.
+
+    For a text field that stayed mis-weighted through the refits, take the documents behind the
+    largest LEAVE-TEXT-OUT residuals where the field fires (diagnosis entities, closed periods), find
+    the word 3-gram most specific to them, and ask it as a new yes/no question. The source's own
+    reader re-reads every document for it (answer cache; a paid reader prints its estimate and stops
+    at its cap), and the answers join the panel point in time as a new version of the rows. The
+    Coordinator then screens and judges that version like any other change.
+    """
+
+    def __init__(self, study, rows_v1: pd.DataFrame, meta: dict, max_splits: int = 3, min_lift=0.3):
+        self.study, self.meta = study, meta
+        self.versions = {"v1": rows_v1}
+        self.max_splits, self.min_lift = max_splits, min_lift
+        self.tried: set = set()
+        self.splits: list[dict] = []
+        self._docs: dict = {}
+
+    def rows_for(self, version: str) -> pd.DataFrame:
+        """The model rows for a question-set version."""
+        return self.versions[version]
+
+    def _spec(self, f: str):
+        for spec in self.study.sources.values():
+            if f in getattr(spec.source, "feature_meta", dict)():
+                return spec
+        return None
+
+    def _documents(self, spec) -> pd.DataFrame:
+        if spec.source.name not in self._docs:
+            end = self.study.periods.tuning[1]
+            self._docs[spec.source.name] = spec.source.documents.documents(None, end)
+        return self._docs[spec.source.name]
+
+    def documents_behind(self, f: str, cutoff, coord) -> tuple[list[str], list[str]]:
+        """(texts behind the largest leave-text-out residuals where f fires, the other firing texts)."""
+        from engine.improve import acceptance_entity
+        from engine.text import tracking
+
+        spec = self._spec(f)
+        if spec is None:
+            return [], []
+        text_cols = [c for c in coord.features if c in coord.meta]
+        lto = replace(coord.cur, dropped=tuple(sorted(set(coord.cur.dropped) | set(text_cols))))
+        rows = self.rows_for(coord.cur.questions)
+        diag = [
+            e for e in rows["entity_id"].unique() if not acceptance_entity(e, coord.cfg.test_share)
+        ]
+        fr = tracking.residual_frame(rows, coord.scores(lto)[0], cutoff, diag)
+        fr = fr[fr[f].notna()]
+        if fr.empty:
+            return [], []
+        firing = fr[fr[f] >= fr[f].quantile(0.8)]
+        flags = coord.reports[-1]["flags"].set_index("field") if coord.reports else None
+        sign = 1 if flags is None or f not in flags.index or flags.loc[f, "t_joint"] >= 0 else -1
+        firing = firing.assign(_r=sign * firing["resid"]).sort_values("_r", ascending=False)
+        top = firing.head(150)
+        rest = firing.iloc[150:].sample(min(600, max(0, len(firing) - 150)), random_state=0)
+        d = self._documents(spec).sort_values("available_at")
+        texts = []
+        for part in (top, rest):
+            m = pd.merge_asof(
+                part[["entity_id", "decision_time"]].sort_values("decision_time"),
+                d[["entity_id", "available_at", "text"]].sort_values("available_at"),
+                left_on="decision_time",
+                right_on="available_at",
+                by="entity_id",
+                direction="backward",
+                allow_exact_matches=False,  # a document published before the decision only
+            )
+            texts.append(m["text"].dropna().tolist())
+        return texts[0], texts[1]
+
+    def propose_field(self, f: str, meta: dict, cutoff, coord):
+        """(new version, question text, [its column]) or None: the Coordinator's proposer hook."""
+        if meta is None or len(self.splits) >= self.max_splits:
+            return None
+        top, rest = self.documents_behind(f, cutoff, coord)
+        if not top:
+            return None
+        a = Counter(g for t in top for s in _sentences(t) for g in set(_ngrams(s)))
+        b = Counter(g for t in rest for s in _sentences(t) for g in set(_ngrams(s)))
+        lifts = [(c / len(top) - b.get(g, 0) / max(1, len(rest)), g) for g, c in a.items()]
+        lifts = sorted((x for x in lifts if "company_a" not in x[1]), reverse=True)
+        for lift, g in lifts:
+            if lift < self.min_lift:
+                return None
+            if (f, g) in self.tried:
+                continue
+            self.tried.add((f, g))
+            q = tq.Question(
+                f"{meta['question']}_phrase{len(self.splits) + 1}",
+                "yes_no",
+                f"The text says: '{g}'.",
+                keywords=[r"\b" + r"\s+".join(map(re.escape, g.split())) + r"\b"],
+            )
+            made = self.read_new_question(f, q, meta, coord)
+            return None if made is None else (made[0], q.prompt, made[1])
+        return None
+
+    def read_new_question(self, f: str, q: tq.Question, meta: dict, coord):
+        """Re-read every document for q with the source's reader; attach it point in time as a new
+        version of the current rows. None if the reader's cap refuses it."""
+        from engine.panel import attach
+        from engine.spend import BudgetExceeded
+        from engine.text import read, source
+
+        spec = self._spec(f)
+        src, docs = spec.source, self._documents(spec)
+        qsets = {meta["doc_type"]: tq.QuestionSet(meta["doc_type"], [q])}
+        try:
+            ans = read.read_all(src.reader, docs, qsets, src.ledger, src.step, src.cache_path)
+        except BudgetExceeded as e:
+            print(f"loop: re-reading for {q.id} refused ({e})", file=sys.stderr)
+            return None
+        wide = source.answers_frame(docs, ans, qsets, src.prefix)
+        col = f"{src.prefix}_{q.id}_p"
+        if wide.empty or col not in wide:
+            return None
+        obs = source.to_observations(wide, f"{src.name}_split", [col])
+        base = self.rows_for(coord.cur.questions)
+        value, _ = attach(base, obs, self.study.market.calendar, spec.max_age_days)
+        version = f"v{len(self.versions) + 1}"
+        self.versions[version] = base.assign(**{col: value.to_numpy()})
+        coord.meta[col] = meta | {
+            "question": q.id,
+            "kind": "yes_no",
+            "part": "p",
+            "encoding": "level",
+        }
+        self.splits.append({"field": f, "question": q.id, "prompt": q.prompt, "version": version})
+        return version, [col]

@@ -56,3 +56,7 @@ registry:
 discovery:
   transforms: [level]
   max_tests: 4
+
+loop:                   # `engine loop --market csv_example`
+  features: all
+  refit: M
