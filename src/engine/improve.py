@@ -528,7 +528,8 @@ class Coordinator:
             if prop is None:
                 continue
             version, text, *more = prop  # optional third item: the columns it adds
-            if self.question_changed(self.meta[f]["question"], text, k, cutoff):
+            split = bool(more and more[0])  # a split ADDS a question; only a rewrite changes one
+            if not split and self.question_changed(self.meta[f]["question"], text, k, cutoff):
                 continue
             added = tuple(sorted(set(self.cur.added) | set(more[0] if more else ())))
             c = replace(self.cur, questions=version, added=added)
@@ -744,7 +745,8 @@ class Coordinator:
                 )
 
     def question_changed(self, qid: str, new_text: str, cycle: int, cutoff) -> bool:
-        """Record a question rewrite; alarm (and freeze) if it moves back toward an earlier version."""
+        """Record a rewrite of question qid's wording; alarm (and freeze) if it moves back toward an
+        earlier version. Splits are new questions, not rewrites, and never come here."""
         hist = self.question_texts.setdefault(qid, [])
         alarm = False
         if len(hist) >= 2:

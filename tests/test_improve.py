@@ -372,3 +372,39 @@ def test_the_question_rung_splits_a_question_and_reads_it_point_in_time(small_te
     assert new[cols[0]].notna().mean() > 0.5 and cols[0] in co.meta  # read and registered
     assert new.drop(columns=cols).equals(rows)  # the old columns are untouched
     assert sp.propose_field(f, meta[f], CUTS[-1], co) is None  # max_splits reached
+
+
+def test_question_splits_are_not_rewrites_and_never_trip_the_rewrite_alarm(planted):
+    """Regression: three split proposals for one field (new questions, similar wording) were read
+    as rewrites of the original question, so the third tripped "rewritten back toward an earlier
+    version" and froze it although no question had changed."""
+    st, rows = planted
+    prompts = iter(
+        [
+            "The text says: 'upgrade shipped on'.",
+            "The text says: 'the mainnet upgrade'.",
+            "The text says: 'shipped on schedule'.",
+        ]
+    )
+
+    class Splits:
+        def propose_field(self, f, meta, cutoff, coord):
+            if f != "txt_one_off_charge_p":
+                return None
+            text = next(prompts, None)
+            return None if text is None else ("v1", text, ["txt_buyback_p"])
+
+    meta = st.sources["releases_text"].source.feature_meta()
+    co = improve.Coordinator(
+        st,
+        FEATS,
+        meta,
+        lambda v: rows,
+        improve.LoopsConfig(half_lives=(), encodings=(), persist_k=2, oscillation_flips=99),
+        proposer=Splits(),
+        log_tests=False,
+    )
+    co.run(CUTS)
+    assert next(prompts, None) is None  # all three splits were proposed
+    assert not any(e.rung == "oscillation" and e.loop == "brake" for e in co.events)
+    assert "one_off_charge" not in co.frozen_fields
