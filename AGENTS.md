@@ -85,7 +85,9 @@ report, test) is paid: `--estimate` prints the cost only.
   ask the user before running `test`, `discover` or `loop --log`.
 - **Log every judged test.** Use `engine test` / `discover` / `loop --log` (or `run.test_candidate`);
   never run a judged comparison off the books, and never delete or edit registry rows. A logged
-  loop needs its `loop:` block (with `name`) committed before the run, and gets one look.
+  loop needs its `loop:` block (with `name`) committed before the run, and gets one look. Every
+  loop, logged or not, also records the changes it judged inside (`loop_internal`): they raise the
+  shared bar like any test, so running loops on a research market costs bar.
 - **Never tune toward a result.** Decide the periods, the candidate and the bar before looking;
   don't re-run with tweaked settings until something passes. `report` is for description only.
 - **Spend caps before paid calls.** Every paid call goes through `engine.spend.Ledger` with a cap;

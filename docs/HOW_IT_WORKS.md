@@ -69,8 +69,9 @@ periods more.
 - overlapping cohorts for long holds (buy a list each formation, hold N formations), Newey-West t.
 
 **Registry and periods** (`engine/registry.py`): every judged test is a row in the market's
-registry CSV, kept or not. The bar is Bonferroni over every judged test so far, inherited registries
-included: 1.96 at the first, 2.81 at the 10th, 3.44 at the 85th (the next, here). Each market declares:
+registry CSV, kept or not, and every feedback loop adds one `loop_internal` row counting the changes
+it judged inside. The bar is Bonferroni over every judged test so far, inherited registries
+included: 1.96 at the first, 2.81 at the 10th, 3.63 at the 174th (the next one here: 84 tests plus the 89 changes judged inside three loop replays). Each market declares:
 
 | period | rule |
 |---|---|
