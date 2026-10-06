@@ -201,7 +201,7 @@ def test_replay_runs_on_vs_frozen_month_by_month(small_text):
     )
     res = improve.replay(st, FEATS, meta, lambda v: rows, cfg)
     r = res["result"]
-    assert r["months"] == 24 and set(r) >= {
+    assert r["periods"] == 24 and set(r) >= {
         "diff_net",
         "diff_net_t",
         "diff_ic",

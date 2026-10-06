@@ -160,6 +160,7 @@ def run_loop(
     changes.to_csv(files["changes"], index=False)
     returns.rename_axis("period").reset_index().to_csv(files["returns"], index=False)
     res |= {"market": study.name, "settings": s, "files": {k: str(p) for k, p in files.items()}}
+    res["splits"] = splitter.splits if splitter else []  # question splits proposed (inner rung 3)
     res |= {"_weights": weights, "_changes": changes, "_returns": returns}
     if log:
         r = res["result"]
@@ -181,7 +182,7 @@ def run_loop(
                 "check_used": False,
                 "kept": bool(r["diff_net_t"] >= bar and r["diff_net"] > 0),
                 "note": (
-                    f"{note} {r['months']} periods {s['years'][0]}-{s['years'][1]}; rank IC diff "
+                    f"{note} {r['periods']} paired periods {s['years'][0]}-{s['years'][1]}; rank IC diff "
                     f"{r['diff_ic']:+.4f} (t {r['diff_ic_t']:.2f}); {res['inner_judged']} changes "
                     f"judged inside, {accepted} accepted; final {res['final_config']}"
                 ).strip(),
@@ -208,7 +209,7 @@ def replay(
     until out of its top 30%) net of costs, ON minus FROZEN, paired t over periods. rows_for(version)
     -> model rows. Nothing inside writes to the registry; the caller logs the result as ONE test."""
     rows = rows_for("v1")
-    times = replay_months(study, rows, cfg.years)
+    times = replay_periods(study, rows, cfg.years)
     fr = frozen_scores(study, rows, features)
     co = Coordinator(
         study,
@@ -228,7 +229,7 @@ def replay(
             progress(k, t, co)
     on = co.stitched()
     cmp = compare_on_frozen(
-        on, fr, times, cfg.band, run.label_overlap(study) if hasattr(study, "cfg") else 1
+        on, fr, times, cfg.band, run.label_overlap(study), run.periods_per_year(study)
     )
     res = {
         "config": {**asdict(cfg), "loops": asdict(cfg.loops)},
@@ -251,7 +252,7 @@ def replay(
     return res | {"_coordinator": co, "_times": times, "_by_period": cmp["_by_period"]}
 
 
-def replay_months(study, rows: pd.DataFrame, years: tuple[int, int]) -> list:
+def replay_periods(study, rows: pd.DataFrame, years: tuple[int, int]) -> list:
     """The decision times replayed."""
     t = pd.Series(sorted(rows["decision_time"].unique()))
     y = study.market.calendar.local_date(t).dt.year
@@ -277,6 +278,7 @@ def compare_on_frozen(
     times: list,
     band: tuple[float, float],
     overlap: int = 1,
+    per_year: int = 12,
 ) -> dict:
     """V1 portfolio net of costs and rank IC: ON, FROZEN and ON minus FROZEN, paired by period
     (`_by_period`: the per-period series)."""
@@ -298,15 +300,15 @@ def compare_on_frozen(
         }
     ).sort_index()
     return {
-        "months": len(d),
+        "periods": len(d),  # with both ON and FROZEN returns: the paired t's sample
         "on_net": float(p_on["net"].mean()),
         "on_net_t": score.per_period_t(p_on["net"], overlap),
         "frozen_net": float(p_fr["net"].mean()),
         "frozen_net_t": score.per_period_t(p_fr["net"], overlap),
         "diff_net": float(d.mean()),
         "diff_net_t": score.per_period_t(d, overlap),
-        "on_turnover": float(12 * p_on["turnover"].mean()),
-        "frozen_turnover": float(12 * p_fr["turnover"].mean()),
+        "on_turnover": float(per_year * p_on["turnover"].mean()),
+        "frozen_turnover": float(per_year * p_fr["turnover"].mean()),
         "ic_on": float(ic_on.mean()),
         "ic_frozen": float(ic_fr.mean()),
         "diff_ic": float(ic.mean()),

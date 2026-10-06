@@ -158,16 +158,16 @@ def cmd_grade_text(study, args) -> None:
 def loop_summary(res: dict, top: int = 5, rows: int = 8) -> str:
     """The `engine loop` printout: how the top inputs' weights moved, the changes, ON vs FROZEN."""
     w, ch, r, s = res["_weights"], res["_changes"], res["result"], res["settings"]
-    days = (
-        [pd.Timestamp(t).date() for t in res["_returns"].index[[0, -1]]]
-        if r["months"]
-        else ["-"] * 2
-    )
+    ret = res["_returns"]
+    days = [pd.Timestamp(t).date() for t in ret.index[[0, -1]]] if len(ret) else ["-"] * 2
     logged = (
         "logged as ONE test" if "registry" in res else "descriptive, not logged (--log: one test)"
     )
-    head = f"The feedback loop on {res['market']}: {r['months']} periods, {days[0]} to {days[1]}"
-    lines = [f"{head} (refit {s['refit']}, recency {s['recency']}); {logged}"]
+    head = (
+        f"The feedback loop on {res['market']}: {len(ret)} periods, {days[0]} to {days[1]} "
+        f"({r['periods']} with both ON and FROZEN returns)"
+    )
+    lines = [f"{head}; refit {s['refit']}, recency {s['recency']}; {logged}"]
     if len(w):
         last = w[w["period"] == w["period"].max()].set_index("input")["weight"]
         inputs = last.abs().sort_values(ascending=False).index[:top].tolist()
@@ -180,14 +180,27 @@ def loop_summary(res: dict, top: int = 5, rows: int = 8) -> str:
             vals = "".join(f"{v * 100:>21.2f}" if pd.notna(v) else f"{'-':>21s}" for v in row)
             lines.append(f"{pd.Timestamp(t).date()!s:10s}{vals}")
     judged = ch[ch["loop"] != "brake"] if len(ch) else ch
+    brakes = ch[ch["loop"] == "brake"] if len(ch) else ch
+    n_acc = int(judged["accepted"].sum()) if len(judged) else 0
     lines.append(
-        f"\nChanges judged: {len(judged)}, accepted: {int(judged['accepted'].sum()) if len(judged) else 0}"
-        + (f"; brakes: {int((ch['loop'] == 'brake').sum())}" if len(ch) else "")
+        f"\nChanges judged end to end: {len(judged)}, accepted: {n_acc}; brakes: {len(brakes)}"
     )
     for e in judged.itertuples() if len(judged) else []:
         lines.append(
             f"  {pd.Timestamp(e.period).date()!s} {e.loop} {e.rung} {e.change[:48]}: t {e.t:.2f} vs bar "
             f"{e.bar:.2f} -> {'accepted' if e.accepted else 'rejected'}"
+        )
+    for e in brakes.itertuples() if len(brakes) else []:
+        lines.append(
+            f"  {pd.Timestamp(e.period).date()!s} brake ({e.rung}) on {e.field}: {e.trigger}"
+        )
+    splits = res.get("splits", [])
+    if splits:
+        tried = ", ".join(x["prompt"].removeprefix("The text says: ").rstrip(".") for x in splits)
+        n_q = int((judged["rung"] == "question").sum()) if len(judged) else 0
+        lines.append(
+            f"  question splits proposed: {len(splits)} ({tried}); {n_q} helped enough on the "
+            "diagnosis entities to be judged"
         )
     lines.append(
         f"\nON vs FROZEN, V1 portfolio net of costs: {r['diff_net']:+.3%}/period (t {r['diff_net_t']:.2f});"
