@@ -2,7 +2,8 @@
 
 The engine answers one question for any input: **known before the decision, does it rank the next
 period's winners above its losers, after costs, more often than luck allows?** Every candidate goes
-through the same pipeline and the same judge, and every judged attempt is logged.
+through the same pipeline and the same judge, and every judged attempt is logged. Around that
+pipeline runs the feedback loop (section 4): weight every input, act, observe, re-weight.
 
 ```
  Sources ──► observations ──► Panel builder ──► rows ──► Walk-forward model ──► Scorer ──► Registry
@@ -164,8 +165,6 @@ fields only, B probe consistency, C reaction gain, D drift gain, E coverage. Gat
 may not beat the reader's own good/bad reading by more than 0.05 AUC; masked-name identification
 must stay at chance. `question_efficacy` adds a keep / drop per question.
 
-## 4. The loops and how they interact
-
 **Question loop** (`text/improve.py`): one change at a time (reword, new question, split, drop;
 at most 3 questions), validated, re-read on dev (only changed questions miss the cache), accepted
 only if the lower bound of a 95% entity-bootstrap of dS is above 0, every gate passes and the set
@@ -174,50 +173,95 @@ gains, the spend cap or a leak. The test split opens at most 3 times; a pass fre
 free `KeywordProposer` mines phrases from misread documents; `ClaudeProposer` is paid and off by
 default.
 
-**Tracking** (`text/tracking.py`, free, closed periods, diagnosis entities only): residual
-attribution (the model's residual regressed on the inputs, one at a time and **jointly**; the same
-sign as the weight = under-weighted, opposite = over-weighted), calibration by answer level (a 0-4
-scale can carry the right average weight and be wrong at every level), rolling IC and decay, and
-reading quality (separates "misread" from "mis-weighted").
+## 4. The feedback loop
 
-**The ladder** (`engine/improve.py`), cheapest first; a rung's candidate is chosen on diagnosis
-entities and judged once, end to end, on acceptance entities; every judged change is a test:
-1 weights (recency half-life, shrinkage; outer loop) · 2 encoding (per-level effects for a scale,
-or surprise) · 3 question rewrite or split (a proposer you supply) · 4 drop a field with ~0
-incremental value · 5 reader fixes (the question loop).
+The centerpiece (`engine/improve.py`, `engine loop`): give every input a weight, act, observe the
+returns, re-weight, try again. `run_loop` replays the tuning years period by period, as if live,
+next to a FROZEN twin (the starting inputs, plain yearly refits, no text changes), and every period
+both see only data that had closed.
 
-**Coordination rules** (`improve.Coordinator`), because the outer loop (weights over all inputs) and
-the inner loop (text) can both "fix" the same symptom:
+**One period** (`Coordinator.cycle`):
+1. **Weights (outer loop).** The walk-forward refits one weight per input, numbers and text answers
+   alike, every `refit` period (monthly by default), on closed labels only; the ON system's recency
+   half-life is fixed in advance (`loop.recency`, `auto` = chosen once a year).
+2. **Cards and the decider.** Each candidate's card shows weight x input for its strongest inputs
+   and a feedback note built from closed periods; the decider (`--decider`, or the YAML's) picks
+   one per batch of 10, the model's own pick when none is set. The note never feeds back into the
+   weights, so the decider runs over the loop's own scores after the replay (`decide.over_loop`).
+3. **Returns.** The period's labels close; `loop_returns.csv` records the V1 portfolio (buy the
+   group's top 10%, hold until out of its top 30%) net of costs, ON and FROZEN, the rank IC, and the
+   decider's pick vs the model's.
+4. **Tracking** (`Coordinator.track` -> `text/tracking.py`, free, diagnosis entities only):
+   residual attribution (the model's miss regressed on the inputs, one at a time and **jointly**;
+   the same sign as the weight = under-weighted, opposite = over-weighted), calibration by answer
+   level (a 0-4 scale can carry the right average weight and be wrong at every level), rolling IC
+   and decay, reading quality. Flags count per refit, not per cycle.
+5. **Outer step** (`outer_step`): if anything is mis-weighted or decaying, a different recency or
+   shrinkage for all weights may be judged. (The refit itself happens every period regardless.)
+6. **Inner step** (`inner_step`), text fields only, and only after the flag persisted through K
+   refits: `reencode` (one-hot or monotone steps for a mis-shaped scale), `rewrite_question` (the
+   free `PhraseSplitter` in `text/improve.py` turns the 3-gram most specific to the documents
+   behind the largest leave-text-out misses into a new yes/no question, re-reads every document
+   with the source's reader under its spend cap, and attaches the answers point in time as a new
+   version of the rows), `drop_useless` (a field with ~0 incremental value over 24 periods).
+
+**The coordinator** keeps the two loops from fighting over the same symptom:
+
+```mermaid
+flowchart TD
+    T["Tracking flags a field<br/>(diagnosis entities, closed periods)"] --> O["Outer step first:<br/>every period, all weights refit"]
+    O --> P{"Still flagged after<br/>K refits (K = 3)?"}
+    P -->|no| N["Leave the text alone"]
+    P -->|yes| E{"Field resting, frozen,<br/>or a change already this period?"}
+    E -->|yes| W["Wait"]
+    E -->|no| S["Screen candidates on<br/>diagnosis entities"]
+    S --> J{"Judge end to end:<br/>book net of costs on acceptance entities,<br/>t at the registry's bar?"}
+    J -->|no| R["Rejected, logged;<br/>waits 6 periods"]
+    J -->|yes| A["Accepted: the field rests;<br/>a new question re-reads history,<br/>then a full refit before anything else"]
+    A --> B{"Book falls afterwards<br/>(t ≤ -1 over ≥ 3 periods)?"}
+    B -->|yes| RB["Rollback"]
+    B -->|no| K["Kept"]
+    O -.-> OSC{"Weight sign flips twice in 12 refits,<br/>or a question rewritten back?"}
+    OSC -->|yes| F["Field frozen"]
+```
+
 1. The inner loop's objective is its own job: reading quality and incremental information measured
-   on the full model, never a field's raw correlation with returns.
-2. Weights first: the outer refit runs every period; an inner change is eligible only if the
-   signal persisted through 3 refits.
-3. At most one structural change per cycle; after a question changes, history is re-read with the
-   new version and a full refit runs before anything else; the field then rests.
-4. One judge: any change must improve the end-to-end book net of costs on acceptance entities, at
-   the registry's bar.
+   on the full model (joint attribution, with-vs-without gains), never a field's raw correlation
+   with returns.
+2. Weights first: an inner change is eligible only if the signal persisted through `persist_k` (3)
+   refits.
+3. At most one structural change per period, in one loop; after a question changes, history is
+   re-read with the new version and a full refit runs before anything else; the field then rests
+   `cooldown` (6) periods.
+4. One judge (`judge_change`): any change must improve the end-to-end book net of costs on
+   acceptance entities, at the bar (inside a loop, the registry's count plus every change judged so
+   far).
 5. Diagnosis and acceptance use different entities (a fixed hash split).
-6. Brakes: rejected candidates wait 6 cycles; automatic rollback if the book falls after an
-   acceptance; an oscillation alarm freezes a field whose weight flips sign twice in 12 refits
-   (counting only refits where the weight is above half the median) or whose question is rewritten
-   back toward an earlier version.
+6. Brakes: rejected candidates wait 6 periods; `rollback_if_worse` undoes an acceptance the book
+   didn't bear out; `oscillation_alarm` freezes a field whose meaningful weight flips sign twice in
+   12 refits, `question_changed` one whose question is rewritten back toward an earlier version.
 7. The decider's note reports only; nothing in the loops reads it.
 
-The trap this prevents (`tests/test_improve.py`): numeric `x` stops mattering while text `demand`,
-0.8 correlated with it, keeps a small effect of its own. One at a time, `demand` looks badly
-over-weighted (t -8.7) and a naive inner loop would rewrite it; jointly the error sits on `x`
-(t -8.8 vs -0.5). The coordinator leaves `demand` alone and the outer refit fixes it.
+**What the demo shows** (`engine demo`, section 6; `tests/test_improve.py`), 300 entities, monthly
+refits, 2011-2014:
+- x_value starts to matter in 2012: its weight goes from about 0 to 0.29, against 0.30 for a fit on
+  the new regime alone. A one-time charge stops mattering: its weight goes from -0.20 to about 0.
+  The U-shaped demand field is re-encoded by the inner loop. Loop ON beats FROZEN (t 4.8).
+- The trap: numeric x stops mattering while text demand, 0.8 correlated with it, keeps a small
+  effect of its own. One at a time, demand looks badly over-weighted (t -8.7 in the 1,000-entity
+  test case) and a naive inner loop would rewrite it; jointly the error sits on x (t -8.8 vs -0.5). The loop moves x's weight
+  from 0.50 to 0.05 and makes no change to the demand question.
 
-**The decider** (`engine/decide.py`, `--decider` on report and test): an LLM picks one entity per
-batch of 10 model cards (score rank + the inputs pushing it). Free `none` is the model's own pick;
-`jev` and `claude` are paid. The feedback note, rebuilt at every decision from closed data only,
-shows the model's record, each input's rank IC (scales level by level), each question's keep / drop
-(dropped questions vanish from the cards) and the decider's own override record. Graded as the
-decider's pick minus the model's, net of costs.
+**Outputs** (`results/<market>/`, or `results_dir` in the YAML): `loop_weights.csv` (one row per
+period and input: the weight that period's decisions used, and the configuration in force),
+`loop_changes.csv` (every judged change and brake, with loop, rung, trigger, t and bar) and
+`loop_returns.csv` (per period). `engine loop` is descriptive. `--log` records ONE registry test
+(ON minus FROZEN, V1 net, paired t over periods, at the bar measured before the run) under the
+YAML's `loop.name`: write the `loop:` block (name, features, years, refit, recency, band,
+persist_k, cooldown, question_splits) and commit it before the run; a second `--log` is refused.
 
-**The replay** (`engine.improve.replay`, Python only): runs the loops month by month over tuning
-years against a frozen twin and reports the V1 portfolio net of costs, ON minus FROZEN; logged by
-the caller as one test. A market adapter supplies `rows_for(question_version)`:
+From Python, `improve.replay` runs the same loop with your own `rows_for(question_version)` and
+proposer:
 
 ```python
 from engine import decide, improve, panel, run
@@ -226,3 +270,10 @@ rows = panel.model_rows(st, run.build_panel(st, "tuning"))
 res = improve.replay(st, st.feature_set("numbers_text"), decide.text_feature_meta(st),
                      lambda version: rows, improve.ReplayConfig(years=(2013, 2014)))
 ```
+
+**The decider on its own** (`decide.py`, `--decider` on report and test): an LLM picks one entity
+per batch of 10 model cards. Free `none` is the model's own pick; `jev` and `claude` are paid and
+print an estimate first. The feedback note, rebuilt at every decision from closed data only, shows
+the model's record, each input's rank IC (scales level by level), each question's keep / drop
+(dropped questions vanish from the cards) and the decider's own override record. Graded as the
+decider's pick minus the model's, net of costs.

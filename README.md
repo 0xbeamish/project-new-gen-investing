@@ -7,11 +7,71 @@ and scorer, and logs every attempt in a registry whose bar rises with each try. 
 year of US stock research, where nothing cleared the bar ([docs/FINDINGS.md](docs/FINDINGS.md)), and
 is meant to be pointed at new data.
 
+## The feedback loop
+
+The core idea: give every input a weight, act on it, see what the returns say, re-weight, and go
+again. `engine loop` runs this period by period over the tuning years, as if live.
+
+```mermaid
+flowchart TD
+    D["New data<br/>numbers + documents"] --> R["Text reader<br/>questions → answers"]
+    R --> W
+    D --> W["Outer loop: weights<br/>one weight per input,<br/>refit from closed returns"]
+    W --> C["Cards<br/>weight × input per candidate<br/>+ feedback note"]
+    C --> J{"Decider<br/>Jev / Claude / model's pick"}
+    J --> P["Positions"]
+    P --> O["Returns close"]
+    O --> T["Tracking<br/>which inputs were over- or under-weighted?"]
+    T -->|every period| W
+    T -->|"still wrong after K refits"| I["Inner loop: text<br/>re-encode → rewrite / split the question"]
+    I --> G{"Judge: is the whole system better<br/>on entities tracking never saw?"}
+    G -->|yes| R
+    G -->|no| X["Rejected, logged"]
+    T -.->|"track record + override record"| C
+```
+
+One period:
+
+1. **Weigh.** The outer loop refits one weight per input (every number and every text answer)
+   from returns that have already closed.
+2. **Show.** Each candidate gets a card: its inputs, weight × value for each, and a note on which
+   inputs have earned trust so far.
+3. **Act.** The decider picks: Jev or Claude if configured, otherwise the model's own top pick.
+4. **Observe.** The period ends and its returns close.
+5. **Track.** Compare what the weights expected with what happened: which inputs were over- or
+   under-weighted, mis-shaped, or fading?
+6. **Fix.** The next refit re-weights everything. A text field that stays wrong for K refits goes
+   to the inner loop (re-encode its answer, then rewrite or split its question), and a change is
+   kept only if the whole system does better on entities the tracking never looked at.
+
+```
+outer loop   every period   all weights, refit from closed returns
+inner loop   rarely         text fields: re-encode -> rewrite / split the question
+coordinator  between them   weights first, one change per period, K refits of proof,
+                            one end-to-end judge, rollback and oscillation brakes
+```
+
+```bash
+uv run engine loop --market demo           # descriptive: prints the weights, changes, ON vs FROZEN
+uv run engine loop --market mine --log     # ONE registry test (pre-register loop.name in the YAML)
+```
+
+It writes three files to `results/<market>/`:
+- `loop_weights.csv`: one row per period and input (`period, input, weight, config`). `weight` is
+  what that period's decisions used, on centred percentile ranks, so weights compare across
+  inputs: 0.10 means moving an input from the middle to the top of the ranking adds 0.05 to the
+  predicted return rank. A new `config` marks an accepted change. Read it as a table with
+  `pd.read_csv(path).pivot(index="period", columns="input", values="weight")`.
+- `loop_changes.csv`: every judged change and brake: loop, rung, field, trigger, t vs bar, accepted.
+- `loop_returns.csv`: per period, the portfolio net of costs with the loop ON and FROZEN (no
+  re-weighting beyond yearly refits, no text changes), rank IC, and the decider's pick vs the
+  model's.
+
 ## Quickstart (no keys, no downloads)
 
 ```bash
 uv sync
-uv run engine demo        # ~90 s: the whole system on a synthetic market with planted signals
+uv run engine demo        # ~2 min: the whole system on a synthetic market, ending with the loop
 uv run pytest -q
 ```
 
@@ -30,6 +90,7 @@ uv run pytest -q
 uv run engine build  --market mine                      # panel, point-in-time check, coverage
 uv run engine report --market mine --features all       # descriptive, never logged
 uv run engine test   --market mine --feature my_signal  # ONE judged test, logged either way
+uv run engine loop   --market mine                      # the feedback loop over time
 ```
 
 The shipped example (30 tokens trading 24/7, planted signals) runs the same way:
@@ -48,14 +109,14 @@ The shipped example (30 tokens trading 24/7, planted signals) runs the same way:
 | `src/engine/spend.py` | caps and a ledger for every paid AI call |
 | `src/engine/market.py` | what a market plug-in must provide |
 | `src/engine/decide.py` | optional AI decider over the model's cards, with a feedback note from closed periods |
-| `src/engine/improve.py` | the loops that adjust weights and text fields, the coordinator between them, the history replay |
-| `src/engine/cli.py` | the `engine` command (demo, build, report, test, discover, grade-text) |
+| `src/engine/improve.py` | the feedback loop: `run_loop`, the outer step (weights), the inner step (text), the coordinator's judge and brakes |
+| `src/engine/cli.py` | the `engine` command (demo, loop, build, report, test, discover, grade-text) |
 | `src/engine/text/questions.py` | question sets as YAML: typed, tagged reading / judgment, versioned |
 | `src/engine/text/read.py` | masking names, readers (keyword free; Jev, Claude paid), the cached, capped reading service |
 | `src/engine/text/source.py` | documents -> answers -> level / change / surprise inputs; history base rates |
 | `src/engine/text/grade.py` | is each question worth asking: answer key, probes, reaction and drift over a prior, leak gate |
 | `src/engine/text/tracking.py` | is a field under- or over-weighted, mis-shaped, decaying or misread |
-| `src/engine/text/improve.py` | the question-improvement loop |
+| `src/engine/text/improve.py` | the question-improvement loop, and the question split the feedback loop's inner step uses |
 | `src/engine/markets/demo.py` | one synthetic market (numbers + documents with planted signals): the demo and the tests |
 | `src/engine/markets/csv.py` | bring your own data from CSV files, no code |
 | `src/engine/markets/us_stocks/` | US small and large caps: universe, EODHD prices and measured spreads, SEC filings, insiders, 8-K text |
@@ -68,6 +129,7 @@ The shipped example (30 tokens trading 24/7, planted signals) runs the same way:
 
 ## Where results go
 
+- `engine loop` writes `results/<market>/loop_*.csv` (above) and prints a summary.
 - `engine report`, `test`, `discover` print JSON to stdout; progress goes to stderr.
 - Judged tests: the market's registry CSV (`registry.file` in its YAML; `data/engine/<market>/` for
   research markets, `.engine_cache/<market>/` for the demo and CSV example).
