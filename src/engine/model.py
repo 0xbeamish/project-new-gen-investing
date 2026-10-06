@@ -62,6 +62,8 @@ def rank_features(frame: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
 
 @dataclass
 class WalkForward:
+    """Refit once per block on closed labels only; score the block out of sample."""
+
     target: str = "fwd_rank"
     demean_by: tuple[str, ...] = ("decision_time", "group")
     model: Callable[[], Model] = field(default_factory=ridge)

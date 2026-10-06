@@ -58,6 +58,8 @@ from engine.text import tracking
 
 @dataclass(frozen=True)
 class ModelConfig:
+    """One configuration of the full system: recency, shrinkage, encodings, drops, question version."""
+
     half_life: float | None = None
     alpha: float = 10.0
     encodings: tuple = ()  # ((feature, onehot | monotone | surprise), ...)
@@ -72,6 +74,8 @@ class ModelConfig:
 
 @dataclass
 class LoopsConfig:
+    """The ladder's grids and the coordination rules' thresholds, fixed in advance."""
+
     half_lives: tuple = ("auto",)  # the outer alternative; "auto" = chosen inside the refits
     alphas: tuple = (10.0,)
     encodings: tuple = ("onehot", "monotone")
@@ -152,6 +156,8 @@ def encode_fields(
 
 @dataclass
 class Event:
+    """One judged change or brake, for the log."""
+
     cycle: int
     cutoff: pd.Timestamp
     loop: str  # outer | inner | brake

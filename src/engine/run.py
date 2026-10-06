@@ -50,6 +50,8 @@ def _log(msg: str) -> None:
 # ---------------------------------------------------------------- the study
 @dataclass
 class Study:
+    """Everything a market YAML defines, built: market, sources, periods, registry, holdout."""
+
     name: str
     cfg: dict
     market: object
@@ -270,6 +272,8 @@ def report_holdout(study: Study, features: str, reason: str) -> dict:
 # ---------------------------------------------------------------- candidates: test and discover
 @dataclass(frozen=True)
 class Candidate:
+    """A feature + a transform + a scope: what one test judges."""
+
     feature: str
     transform: str = "level"
     scope: str = "universal"

@@ -62,6 +62,8 @@ class BudgetExceeded(RuntimeError):
 
 @dataclass
 class Ledger:
+    """The spend ledger CSV, the caps per step and the funds per provider."""
+
     path: Path
     step_caps: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_CAPS))
     funds: dict[str, float] = field(default_factory=dict)  # provider -> USD loaded

@@ -83,6 +83,7 @@ def _get_json(url: str, cache_name: str) -> dict:
 
 
 def ticker_to_cik() -> dict[str, int]:
+    """Current tickers -> SEC company id (listed companies only)."""
     # Current listings only: delisted companies are missing (survivorship bias, see README).
     data = _get_json("https://www.sec.gov/files/company_tickers.json", "company_tickers.json")
     return {row["ticker"]: row["cik_str"] for row in data.values()}
@@ -235,6 +236,7 @@ CYCLICAL_SIC = [
 
 
 def company_sic(cik: int) -> int | None:
+    """The company's current SIC code (not point-in-time)."""
     data = _get_json(
         f"https://data.sec.gov/submissions/CIK{cik:010d}.json",
         f"submissions_{cik}.json",
@@ -243,6 +245,7 @@ def company_sic(cik: int) -> int | None:
 
 
 def is_cyclical(sic: int | None) -> bool:
+    """True for boom-and-bust industries (CYCLICAL_SIC)."""
     return sic is not None and any(lo <= sic <= hi for lo, hi in CYCLICAL_SIC)
 
 
@@ -286,6 +289,7 @@ SIC_SECTORS = [
 
 
 def sic_to_sector(sic: int | None) -> str:
+    """One of ~11 GICS-like sectors, or "other"."""
     for (lo, hi), sector in SIC_SECTORS:
         if sic is not None and lo <= sic <= hi:
             return sector

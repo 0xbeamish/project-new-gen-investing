@@ -46,6 +46,8 @@ GATES = {
 
 @dataclass
 class Change:
+    """One proposed change to a question set: rewrite | add | drop | split."""
+
     kind: str  # rewrite | add | drop | split
     doc_type: str
     questions: list[tq.Question] = field(default_factory=list)  # new / reworded questions

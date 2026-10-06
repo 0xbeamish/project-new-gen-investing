@@ -25,6 +25,8 @@ from engine import data
 
 @dataclass
 class SourceSpec:
+    """A source as the YAML configures it."""
+
     source: object  # an engine.data.Source
     features: list[str] | None = None  # None = every feature the source emits
     max_age_days: int | None = None  # None = never stale
@@ -33,6 +35,8 @@ class SourceSpec:
 
 @dataclass
 class PanelSpec:
+    """Which decision times, which horizon, which sources."""
+
     start: pd.Timestamp
     end: pd.Timestamp  # exclusive
     schedule: str = "monthly"
@@ -42,6 +46,8 @@ class PanelSpec:
 
 @dataclass
 class Panel:
+    """The built panel and the available_at behind every filled cell."""
+
     frame: pd.DataFrame  # entity_id, decision_time, group, attrs..., labels, features
     available_at: dict[str, pd.Series]  # feature -> available_at per frame row (NaT = empty)
     features: list[str]

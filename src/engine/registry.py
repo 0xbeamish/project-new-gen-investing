@@ -51,6 +51,8 @@ def required_t(n_tries: int, alpha: float = 0.05) -> float:
 
 @dataclass(frozen=True)
 class Periods:
+    """Tuning [start, end), check [start, end), holdout from holdout_start."""
+
     tuning: tuple[pd.Timestamp, pd.Timestamp]  # [start, end)
     check: tuple[pd.Timestamp, pd.Timestamp]
     holdout_start: pd.Timestamp
@@ -96,6 +98,8 @@ def git_commit() -> str:
 
 @dataclass
 class HoldoutLock:
+    """The holdout's unlock log: every look is recorded with a reason and the commit."""
+
     unlock_log: Path
 
     def unlock(self, market: str, reason: str) -> None:
@@ -122,6 +126,8 @@ class HoldoutLock:
 
 @dataclass
 class Registry:
+    """One market's registry CSV, plus the registries it inherits."""
+
     path: Path
     market: str
     inherit: list[Path] = field(default_factory=list)

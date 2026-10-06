@@ -248,9 +248,12 @@ class _Base:
 
 
 class UniverseSize(_Base):
+    """px_log_mcap from the universe list."""
+
     name = "universe_size"
 
     def fetch(self, start, end) -> None:
+        """Nothing: the list is built offline."""
         _log(
             "universe_size: the list is built by "
             "`python -m engine.markets.us_stocks.universe build` (EODHD + SEC)"
@@ -359,6 +362,8 @@ class _PerCik(_Base):
 
 
 class SecAnnual(_PerCik):
+    """10-K ratios, first-reported values, dated by the 10-K."""
+
     name = "sec_annual"
 
     def _frames(self, cik: int) -> pd.DataFrame | None:
@@ -394,6 +399,8 @@ class SecQuarterly(_PerCik):
 
 
 class EightKCounts(_Base):
+    """8-K filings per SEC item category over a rolling window."""
+
     name = "eightk_counts"
 
     def observations(self, start, end) -> pd.DataFrame:
@@ -427,6 +434,8 @@ class EightKCounts(_Base):
 
 
 class InsiderTrades(_Base):
+    """Form 4 open-market buying and selling over a rolling window."""
+
     name = "insiders"
 
     def fetch(self, start, end) -> None:

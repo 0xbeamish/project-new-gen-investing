@@ -63,14 +63,15 @@ def cmd_build(study, args) -> None:
     """Panel + point-in-time check + coverage (after fetching, with --fetch)."""
     if args.fetch:
         run.fetch(study)
-    f = run.build_panel(study, "tuning")
+    p = run.build_panel(study, "tuning")
+    f = p.frame
     _print(
         {
-            "rows": len(f.frame),
-            "decision_times": int(f.frame["decision_time"].nunique()),
-            "entities": int(f.frame["entity_id"].nunique()),
-            "labelled": int(f.frame["fwd_return"].notna().sum()),
-            "coverage": {c: round(float(f.frame[c].notna().mean()), 3) for c in f.features},
+            "rows": len(f),
+            "decision_times": int(f["decision_time"].nunique()),
+            "entities": int(f["entity_id"].nunique()),
+            "labelled": int(f["fwd_return"].notna().sum()),
+            "coverage": {c: round(float(f[c].notna().mean()), 3) for c in p.features},
         }
     )
 

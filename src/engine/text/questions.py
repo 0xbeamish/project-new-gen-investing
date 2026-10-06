@@ -43,6 +43,8 @@ LEVELS = [0, 1, 2, 3, 4]
 
 @dataclass(frozen=True)
 class Question:
+    """One typed, tagged, versioned question."""
+
     id: str
     kind: str
     prompt: str
@@ -98,6 +100,8 @@ class Question:
 
 @dataclass
 class QuestionSet:
+    """The questions asked of one doc_type."""
+
     doc_type: str
     questions: list[Question]
     version: int = 1
