@@ -93,6 +93,10 @@ It writes three files to `results/<market>/`:
 
 ## Quickstart (no keys, no downloads)
 
+Needs [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh` or
+`brew install uv`). Using an AI coding agent? Point it at this repo and say "try it out":
+[AGENTS.md](AGENTS.md) gives it the steps and the expected results.
+
 ```bash
 uv sync
 uv run engine demo        # ~2 min: the whole system on a synthetic market, ending with the loop

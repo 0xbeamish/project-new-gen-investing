@@ -5,7 +5,28 @@ before a decision, ranks the next period's winners above its losers after costs,
 luck allows. Read README.md first, docs/HOW_IT_WORKS.md for the mechanics, docs/FINDINGS.md for
 what has already been tried (and failed).
 
+## If the user says "try it out"
+
+Run these in order (about 10 minutes, no keys, no downloads beyond Python packages), compare with
+the expected results, then tell the user what the system does and what each step showed.
+
+| step | command | expected on a fresh clone |
+|---|---|---|
+| 1. install | `uv sync` | finishes without errors |
+| 2. demo | `uv run engine demo` (~2 min) | six numbered sections. In section 6A, `x_value`'s weight climbs from about 0 to about 29 (x100) against a true 30, and the inner loop re-encodes `txt_demand_level` (t 2.48). In 6B (the trap), `x_value` falls from about 50 to about 5 while "inner-loop changes to the demand question: none" |
+| 3. a real signal | `uv run engine test --market csv_example --feature flow` | `t_tune` about 11.2 vs `bar_tune` 1.96, `check_used: true`, `kept: true` |
+| 4. noise | `uv run engine test --market csv_example --feature social` | `t_tune` about 1.0 vs `bar_tune` about 2.24 (the bar rose because step 3 was logged), `kept: false` |
+| 5. the feedback loop | `uv run engine loop --market csv_example` | a weights table where `flow` rises from about 6 to 16–20 and `social` stays near 0; "Changes judged: 0, accepted: 0"; ON vs FROZEN t near 0; three files in `results/csv_example/` |
+| 6. tests | `uv run pytest -q` (~3 min) | all pass |
+
+Steps 3–4 write to the toy registry in `.engine_cache/csv_example/`, so a second run shows a higher
+bar; delete that folder to start fresh. Then offer the user the next step: their own data through
+the CSV market ("Adding data" below).
+
 ## Setup
+
+Needs [uv](https://docs.astral.sh/uv/): `curl -LsSf https://astral.sh/uv/install.sh | sh` (or
+`brew install uv`). uv installs Python 3.12 itself.
 
 ```bash
 uv sync                    # Python 3.12, no keys needed
