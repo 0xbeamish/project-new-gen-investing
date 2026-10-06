@@ -15,6 +15,33 @@ system either. The market prices "did X happen" within days. A slow signal in la
 better: a pre-registered test of visibly inflecting fundamentals, held 36 months, earned nothing
 over the large-cap universe (t 0.04).
 
+## Why no edge so far
+
+Reasons, each tied to a logged result below; none is an excuse for a test that wasn't run.
+
+1. **Public information is priced fast.** The v1 card (Jev reading a filing) explains the 3-day
+   reaction to it: reaction rank IC 0.163 against 0.019 for the history prior alone. But traded
+   from the next open, the edge is gone: 1- and 5-day long-shorts lose money after costs, and the
+   card adds nothing significant to later drift (IC 0.032 +- 0.020).
+2. **Costs are larger than the edge.** Numbers plus earnings-release text rank next month's winners
+   above its losers (rank IC 0.034, t 4.7 on tuning years), yet measured round trips (35-110 bp by
+   size) took 43% of the gross return of the low-turnover V1 portfolio and 54% of the micro-cap
+   version. The low-turnover rule (buy the top 10%, hold until out of the top 30%) still nets only
+   +0.17%/month, t 1.5.
+3. **Everyone has the same data.** Every input was public: SEC filings and XBRL facts, Form 4
+   insider trades, 8-K texts, vendor prices, GDELT news and Reddit attention. Edges in public data
+   usually belong to whoever is faster, bigger, cheaper to trade or holds data others don't.
+4. **A strict bar, on purpose.** The bar counts every judged test: 84 logged tests plus the 89
+   changes the loop replays judged inside (counted since 2026-10-06), so the next test needs
+   t >= 3.63 (it was 3.42-3.44 before the loop's internal tests were counted). Real but modest
+   effects can't clear it on this much history: French 49-industry momentum, 1970-2019, net t 2.62.
+5. **LLM-read backtests are compromised.** A model trained after 2019 may remember what happened
+   to a company. Masking names, tickers, products and trial names reduces this, and the leak gate
+   measures what remains, but it can't be proven zero; only a forward paper record can.
+
+The engine's value is therefore the verdict itself: a fast, honest answer on new data,
+especially proprietary text that the market hasn't already read.
+
 ## Honesty rules (enforced by code where possible)
 
 1. **Point in time.** A value may be used only from the moment it was public (`available_at`
@@ -159,6 +186,12 @@ Where there is an edge, it is about the size of the cost of trading it.
   - Descriptive, not logged: option 1's outer loop vs option 2's, rank IC +0.015 (t 2.45), V1 net
     +0.076%/month (t 0.78). Recency weighting hurt on this data; more frequent refits without it
     helped IC a little, not net returns.
+- **Registry correction (2026-10-06).** The 22 + 33 + 34 = 89 changes judged inside the three
+  replays raised the bar only within each replay and were never counted in the registry, so later
+  tests faced too low a bar. They are now `loop_internal` rows (every loop records its own from now
+  on): the shared count goes from 84 to 173 and the next bar from 3.44 to 3.63. No earlier verdict
+  changes: the rank-IC baselines that cleared their bars (t 3.50, 4.66, 10.06) would also clear 3.63
+  and still failed after costs, and nothing else reached t 3.
 - **Loops on synthetic markets** (docs/HOW_IT_WORKS.md): tracking flags a planted over-weighted field and a
   planted U-shaped field; the ladder fixes both; when the true error is a mis-weighted numeric input
   correlated with a text field, the coordinator leaves the text question alone and the outer refit

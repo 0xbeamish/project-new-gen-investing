@@ -15,6 +15,25 @@ On public US stock data from 2011–2019 the loop works as designed, but no sign
 costs ([docs/FINDINGS.md](docs/FINDINGS.md)). It is built to be pointed at better data, especially
 proprietary text. Run `uv run engine demo` to watch it learn on a synthetic market, no keys needed.
 
+## Why no edge so far
+
+Each reason is tied to a logged result ([docs/FINDINGS.md](docs/FINDINGS.md#why-no-edge-so-far)):
+
+1. **Public news is priced fast.** An LLM's reading of a filing explains much of the 3-day price
+   reaction to it (rank IC 0.16), but that edge is gone by the next open.
+2. **Costs are bigger than the edge.** A model over numbers and earnings text ranks next month's
+   winners above its losers (rank IC t 4.7), but measured trading costs took 43–54% of the gross
+   return, and holding longer to trade less didn't rescue it.
+3. **Everyone has the same data.** Only public sources were used (SEC filings, prices, insider
+   trades, news). Those who win usually have speed, scale, cheap execution, or data others don't.
+4. **The bar is strict on purpose.** After 173 counted tests a result needs t ≥ 3.6, so a weaker
+   real effect (industry momentum, t 2.6) can't be proven with this much history.
+5. **AI-read backtests are compromised.** The model may remember what happened in 2011–2019.
+   Masking company names reduces this but can't remove it, so forward paper trading is the honest
+   test.
+
+What the engine is for: a fast, honest verdict on new data, such as proprietary text.
+
 ## The feedback loop
 
 The core idea: give every input a weight, act on it, see what the returns say, re-weight, and go
