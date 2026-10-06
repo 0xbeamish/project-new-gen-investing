@@ -22,20 +22,36 @@ again. `engine loop` runs this period by period over the tuning years, as if liv
 
 ```mermaid
 flowchart TD
-    D["New data<br/>numbers + documents"] --> R["Text reader<br/>questions → answers"]
-    R --> W
-    D --> W["Outer loop: weights<br/>one weight per input,<br/>refit from closed returns"]
+    subgraph INPUTS["Inputs: any source with a timestamp"]
+        direction LR
+        subgraph TXT["Text"]
+            N["News"]
+            F["Filings and earnings calls"]
+            S["Social posts"]
+            PD["Proprietary documents"]
+        end
+        subgraph NUM["Quantitative"]
+            E["Earnings and financials"]
+            PX["Prices and volume"]
+            IN["Insider trades"]
+            PM["Prediction markets"]
+            OC["On-chain data"]
+        end
+    end
+    TXT --> R["Text reader<br/>questions → answers + evidence quote"]
+    R --> W["Outer loop: weights<br/>one weight per input,<br/>refit from closed returns"]
+    NUM --> W
     W --> C["Cards<br/>weight × input per candidate<br/>+ feedback note"]
     C --> J{"Decider<br/>Jev / Claude / model's pick"}
     J --> P["Positions"]
     P --> O["Returns close"]
     O --> T["Tracking<br/>which inputs were over- or under-weighted?"]
-    T -->|every period| W
-    T -->|"still wrong after K refits"| I["Inner loop: text<br/>re-encode → rewrite / split the question"]
-    I --> G{"Judge: is the whole system better<br/>on entities tracking never saw?"}
-    G -->|yes| R
-    G -->|no| X["Rejected, logged"]
+    T -->|"every period: re-weight"| W
     T -.->|"track record + override record"| C
+    T -->|"text input still wrong after K refits"| I["Inner loop: text<br/>re-encode → rewrite / split the question"]
+    I --> G{"Judge: is the whole system better<br/>on entities tracking never saw?"}
+    G -->|yes| U["New question version<br/>used by the reader from next period"]
+    G -->|no| X["Rejected, logged"]
 ```
 
 One period:
