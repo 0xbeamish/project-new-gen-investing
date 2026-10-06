@@ -11,6 +11,8 @@ cost as a fraction). One value per decision time, then a t-statistic over decisi
                      the equal-weight universe; half a round trip on every buy and every sell;
                      turnover, holding period and the share of gross lost to costs
   per_period_t       mean / (sd / sqrt(n)), deflated by sqrt(overlap) when label windows overlap
+  newey_west_t       mean / Newey-West (Bartlett) standard error: for series whose overlapping
+                     holdings make them autocorrelated (engine.cohorts)
 """
 
 from __future__ import annotations
@@ -27,6 +29,19 @@ def per_period_t(series: pd.Series, overlap: int = 1) -> float:
     if len(s) < 3 or not sd > 0:
         return float("nan")
     return float(s.mean() / (sd / np.sqrt(len(s))) / np.sqrt(overlap))
+
+
+def newey_west_t(series, lags: int) -> float:
+    """t of the mean with a Newey-West (Bartlett kernel) long-run variance, `lags` lags."""
+    x = pd.Series(series).dropna().to_numpy(dtype=float)
+    n = len(x)
+    if n < 3:
+        return float("nan")
+    e = x - x.mean()
+    var = e @ e / n
+    for lag in range(1, min(lags, n - 1) + 1):
+        var += 2 * (1 - lag / (lags + 1)) * (e[lag:] @ e[:-lag]) / n
+    return float(x.mean() / np.sqrt(var / n)) if var > 0 else float("nan")
 
 
 def overlap(horizon_bars: int, bars_between_decisions: int) -> int:

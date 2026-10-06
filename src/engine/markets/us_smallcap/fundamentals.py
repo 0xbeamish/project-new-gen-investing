@@ -13,9 +13,9 @@ def _safe_div(a, b):
     return a / b if b not in (0, None) and pd.notna(a) and pd.notna(b) else np.nan
 
 
-def stock_features(ticker: str, cik: int) -> pd.DataFrame:
+def stock_features(ticker: str, cik: int, filed_until=None) -> pd.DataFrame:
     """Turn a company's 10-K facts into ratio features, dated by the 10-K filing date."""
-    facts = sec.annual_facts(cik)
+    facts = sec.annual_facts(cik, filed_until)
     if facts.empty:
         return pd.DataFrame(columns=FEATURE_TABLE_COLUMNS)
     wide = (
@@ -71,22 +71,40 @@ def to_wide(features: pd.DataFrame) -> pd.DataFrame:
 STALE_QUARTER_DAYS = 200  # past this, the latest quarterly filing is too old to use
 
 
-def quarterly_features(ticker: str, cik: int) -> pd.DataFrame:
+EXTENDED = [
+    "q_rev_growth_yoy_chg4",
+    "q_op_margin_chg_yoy",
+    "q_rnd_intensity",
+    "q_rnd_intensity_chg_yoy",
+]
+
+
+def quarterly_features(
+    ticker: str, cik: int, extended: bool = False, filed_until=None
+) -> pd.DataFrame:
     """Per filed quarter: growth, margins and inventory, dated by when that quarter was public.
 
     Columns: entity, filed, q_rev_growth_yoy, q_rev_growth_qoq, q_gross_margin,
     q_gross_margin_chg_yoy, q_op_margin, q_inventory_days, q_inventory_days_chg_yoy.
+    extended adds EXTENDED: revenue-growth acceleration (YoY growth minus the YoY growth four
+    quarters earlier), operating-margin and R&D-intensity change vs a year ago. A quarter's date
+    stays the base filing date; an R&D value first filed after it is left out (NaN).
     """
-    facts = sec.quarterly_facts(cik)
+    extra = ("rnd",) if extended else ()
+    facts = sec.quarterly_facts(cik, extra, filed_until)
     if facts.empty:
         return pd.DataFrame()
     w = (
         facts.pivot_table(index="end", columns="concept", values="val", aggfunc="first")
-        .reindex(columns=list(sec.QUARTERLY_CONCEPTS))
+        .reindex(columns=list(sec.QUARTERLY_CONCEPTS) + list(extra))
         .sort_index()
     )
     filed = facts[facts["concept"].isin(sec.FLOW)].groupby("end")["filed"].max()
     w = w[w.index.isin(filed.index)]
+    if extended:  # R&D only where it was public by the quarter's own date
+        rnd_filed = facts[facts["concept"] == "rnd"].set_index("end")["filed"]
+        late = rnd_filed.reindex(w.index) > filed.reindex(w.index)
+        w.loc[late.to_numpy(), "rnd"] = np.nan
     gross = w["gross_profit"].fillna(w["revenue"] - w["cost_of_revenue"])
     cogs = w["cost_of_revenue"].fillna(w["revenue"] - w["gross_profit"])
     out = pd.DataFrame(index=w.index)
@@ -117,6 +135,12 @@ def quarterly_features(ticker: str, cik: int) -> pd.DataFrame:
     )
     out["q_gross_margin_chg_yoy"] = out["q_gross_margin"] - yr["q_gross_margin"]
     out["q_inventory_days_chg_yoy"] = out["q_inventory_days"] - yr["q_inventory_days"]
+    if extended:
+        out["q_rnd_intensity"] = w["rnd"] / w["revenue"].where(w["revenue"] > 0)
+        yr = ago(364)  # again: now carries this quarter's growth and R&D columns
+        out["q_rev_growth_yoy_chg4"] = out["q_rev_growth_yoy"] - yr["q_rev_growth_yoy"]
+        out["q_op_margin_chg_yoy"] = out["q_op_margin"] - yr["q_op_margin"]
+        out["q_rnd_intensity_chg_yoy"] = out["q_rnd_intensity"] - yr["q_rnd_intensity"]
     return out.assign(
         entity=ticker, filed=filed.reindex(out.index).to_numpy()
     ).reset_index(drop=True)

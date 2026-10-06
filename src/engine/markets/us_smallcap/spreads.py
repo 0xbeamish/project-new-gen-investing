@@ -52,9 +52,12 @@ def corwin_schultz(h: np.ndarray, l: np.ndarray) -> float:
     return float(np.mean(np.clip(s, 0, None)))
 
 
-def stock_months(code: str) -> pd.DataFrame:
-    """Per calendar month: AR and CS spreads, daily volatility, average dollar volume."""
+def stock_months(code: str, until=None) -> pd.DataFrame:
+    """Per calendar month: AR and CS spreads, daily volatility, average dollar volume.
+    until: ignore bars after this date."""
     px = prices.load_prices(code)
+    if until is not None:
+        px = px[px.index <= pd.Timestamp(until)]
     px = px.dropna(subset=["open", "high", "low", "close"])
     px = px[(px["high"] >= px["low"]) & (px["high"] > 0)]
     if len(px) < 30:
@@ -97,10 +100,11 @@ def impact(
     return 2 * IMPACT_Y * vol_d * np.sqrt(position / adv.clip(lower=1.0))
 
 
-def build() -> pd.DataFrame:
+def build(lists=None, out_path=OUT, until=None) -> pd.DataFrame:
+    """Spreads for every code in the universe lists (default: small/mid + micro) -> out_path."""
     codes = set()
-    for f in (universe.OUT, universe.MICRO_OUT):
-        if not f.exists():
+    for f in lists or (universe.OUT, universe.MICRO_OUT):
+        if not Path(f).exists():
             continue
         codes |= set(
             pd.read_csv(f, dtype={"code": str}, keep_default_na=False, na_values=[""])[
@@ -109,16 +113,17 @@ def build() -> pd.DataFrame:
         )
     parts = []
     for i, c in enumerate(sorted(codes), 1):
-        parts.append(stock_months(c))
+        parts.append(stock_months(c, until))
         if i % 1000 == 0:
             print(f"  {i:,}/{len(codes):,} codes", file=sys.stderr)
     out = pd.concat([p for p in parts if len(p)], ignore_index=True)
-    out.to_pickle(OUT)
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    out.to_pickle(out_path)
     return out
 
 
-def load() -> pd.DataFrame:
-    return pd.read_pickle(OUT)
+def load(path=None) -> pd.DataFrame:
+    return pd.read_pickle(path or OUT)
 
 
 def attach(rows: pd.DataFrame, month_col: str = "as_of") -> pd.DataFrame:
@@ -133,8 +138,18 @@ def attach(rows: pd.DataFrame, month_col: str = "as_of") -> pd.DataFrame:
 
 
 def main() -> None:
-    out = build()
-    print(f"{len(out):,} stock-months -> {OUT}")
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("cmd", nargs="?", default="build", choices=["build"])
+    ap.add_argument(
+        "--lists", nargs="*", help="universe CSVs (default small/mid + micro)"
+    )
+    ap.add_argument("--out", default=str(OUT))
+    ap.add_argument("--until", help="ignore bars after this date")
+    a = ap.parse_args()
+    out = build(a.lists, a.out, a.until)
+    print(f"{len(out):,} stock-months -> {a.out}")
 
 
 if __name__ == "__main__":

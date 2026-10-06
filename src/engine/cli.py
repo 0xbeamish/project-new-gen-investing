@@ -14,6 +14,9 @@ decide    a decider over the model's cards with the feedback note (--estimate fi
 text-eval the text eval harness on the market's eval sets (needs the plug-in's eval_sets)
 spend     the spend ledger: spent vs cap per step
 replay    loops ON vs FROZEN month by month over tuning years (--estimate first; --log = ONE test)
+cohort    the YAML's cohort_test (overlapping long-horizon cohorts): --coverage (no returns), the
+          design (descriptive), --log (ONE test), or variants --hold / --top / --input --spread /
+          --names (descriptive, never logged)
 """
 
 from __future__ import annotations
@@ -154,6 +157,36 @@ def cmd_replay(study, args) -> None:
     mod.main(study, args)
 
 
+def cmd_cohort(study, args) -> None:
+    from engine import cohort_study
+
+    variant = any(
+        v is not None for v in (args.hold, args.top, args.input, args.names)
+    ) or bool(args.spread)
+    if args.log and (variant or args.coverage):
+        raise SystemExit("--log runs the pre-registered design only: no variants")
+    cs = cohort_study.Study(study)
+    if args.coverage:
+        print(cs.coverage().round(3).to_string())
+        return
+    if args.names:
+        y = [int(x) for x in (args.years or "2013-2016").split("-")]
+        print(cs.ranks_of(args.names.split(","), (y[0], y[-1])).to_string(index=False))
+        return
+    res = cs.run(
+        top=args.top,
+        hold=args.hold,
+        inputs=[args.input] if args.input else None,
+        spread=args.spread,
+    )
+    m = res.pop("_monthly")
+    if args.log:
+        res["registry"] = cohort_study.log(study, res, args.note or "")
+    _print(res)
+    if args.monthly_out:
+        m.to_csv(args.monthly_out)
+
+
 def cmd_spend(study, args) -> None:
     from engine.spend import Ledger
 
@@ -180,6 +213,7 @@ def main(argv=None) -> None:
             "text-eval",
             "spend",
             "replay",
+            "cohort",
         ],
     )
     ap.add_argument("--market")
@@ -214,6 +248,13 @@ def main(argv=None) -> None:
     ap.add_argument("--quick", action="store_true", help="demo: fewer iterations")
     ap.add_argument("--refit", help="replay: M (monthly) | year")
     ap.add_argument("--recency", help="replay: auto | none")
+    ap.add_argument("--coverage", action="store_true", help="cohort: inputs only")
+    ap.add_argument("--hold", type=int, help="cohort: quarters held (variant)")
+    ap.add_argument("--top", type=float, help="cohort: fraction or count (variant)")
+    ap.add_argument("--input", help="cohort: one input instead of the composite")
+    ap.add_argument("--spread", action="store_true", help="cohort: top minus bottom")
+    ap.add_argument("--names", help="cohort: codes whose ranks to show, e.g. NVDA,MU")
+    ap.add_argument("--monthly-out", help="cohort: write the monthly series here")
     ap.add_argument(
         "--min-funds-left",
         type=float,
@@ -228,7 +269,7 @@ def main(argv=None) -> None:
         return
     if not args.market:
         ap.error("--market is required")
-    if args.market == "us_smallcap":
+    if args.market in ("us_smallcap", "us_largecap"):
         from engine.markets.us_smallcap.env import load_env
 
         load_env()
@@ -244,6 +285,7 @@ def main(argv=None) -> None:
         "text-eval": cmd_text_eval,
         "spend": cmd_spend,
         "replay": cmd_replay,
+        "cohort": cmd_cohort,
     }[args.cmd](study, args)
 
 

@@ -13,7 +13,10 @@ Market
              A series that stops early is a delisting: return to the last trade, then -30%
              (Shumway 1997) unless a merger 8-K sits near the last trade (a buyout pays the deal)
   cost_bps   measured round trip for that stock-month: mean of Abdi-Ranaldo and Corwin-Schultz
-             effective spreads (spreads.py)
+             effective spreads (spreads.py; `costs.file` picks the table)
+  data_end   optional: bars, filings and 8-Ks after this date are never read (a study that must
+             not see later years even through a label); a series is "ended" only if it stopped
+             trading more than ended_if_no_bar_for_days before data_end
 
 Sources (time stamps: SEC filings are dated by day or accepted at a known time; either way they
 are usable from the next midnight New York time, which is what the pilot did)
@@ -107,6 +110,11 @@ class UsSmallcap:
         self._list_dates = pd.DatetimeIndex(
             self.lists["_available"].unique()
         ).sort_values()
+        self.data_end = pd.Timestamp(cfg["data_end"]) if cfg.get("data_end") else None
+        # panel caches key on it; absent, the small-cap cache keys are unchanged
+        if self.data_end is not None:
+            self.fingerprint = f"data_end={self.data_end.date()}"
+        self.cost_file = (cfg.get("costs") or {}).get("file")
 
     # ---------- universe ----------
     def entities(self) -> pd.DataFrame:
@@ -140,21 +148,27 @@ class UsSmallcap:
         from engine.markets.us_smallcap import prices
 
         px = prices.load_prices(code)
+        if self.data_end is not None:
+            px = px[px.index <= self.data_end]
         if len(px):
             px = px.copy()
             px.index = self.calendar.bar_close(px.index)
         return px
 
+    def _now(self) -> pd.Timestamp:
+        if self.data_end is None:
+            return pd.Timestamp.now(tz="UTC")
+        return self.calendar.bar_close([self.data_end])[0]
+
     def _ended(self, px: pd.DataFrame) -> bool:
-        return bool(
-            len(px)
-            and px.index[-1] < pd.Timestamp.now(tz="UTC") - self.ended_if_older_than
-        )
+        return bool(len(px) and px.index[-1] < self._now() - self.ended_if_older_than)
 
     def _buyout(self, cik: int, last_bar: pd.Timestamp) -> bool:
         from engine.markets.us_smallcap import sec
 
         ev = sec.eight_k_events(int(cik), str(cik))
+        if self.data_end is not None:
+            ev = ev[ev["published_at"] < self.data_end + pd.Timedelta(days=1)]
         last = self.calendar.local_date(pd.Series([last_bar])).iloc[0]
         near = ev[
             (ev["published_at"] >= last - pd.Timedelta(days=90))
@@ -196,11 +210,32 @@ class UsSmallcap:
         lab["delisted"] = lab["delisted"].fillna(False).astype(bool)
         return lab
 
+    def daily_returns(self, codes) -> tuple[pd.DataFrame, pd.Series]:
+        """Daily simple returns (local trading dates x codes, NaN = no bar) and, for series that
+        ended, their last local date. An ended series' last return carries the delisting rule
+        (-30% unless a merger 8-K sits near the last trade), as in labels()."""
+        cik_of = (
+            self.entities().drop_duplicates("entity_id").set_index("entity_id")["cik"]
+        )
+        cols, ended = {}, {}
+        for code in codes:
+            px = self.bars(code)
+            if px.empty:
+                continue
+            r = px["adj_close"].astype(float).pct_change()
+            if self._ended(px):
+                if not self._buyout(cik_of[code], px.index[-1]):
+                    r.iloc[-1] = (1 + r.iloc[-1]) * (1 + DELIST_PENALTY) - 1
+                ended[code] = self.calendar.local_date(px.index[-1:]).iloc[0]
+            r.index = self.calendar.local_date(pd.Series(px.index)).to_numpy()
+            cols[code] = r
+        return pd.DataFrame(cols).sort_index(), pd.Series(ended, dtype="datetime64[ns]")
+
     # ---------- costs ----------
     def cost_bps(self, rows: pd.DataFrame) -> pd.Series:
         from engine.markets.us_smallcap import spreads
 
-        sp = spreads.load()[["code", "month", "ar", "cs"]]
+        sp = spreads.load(self.cost_file)[["code", "month", "ar", "cs"]]
         month = self.calendar.local_date(rows["decision_time"]).dt.to_period("M")
         m = pd.DataFrame(
             {"code": rows["entity_id"].to_numpy(), "month": month.to_numpy()}
@@ -358,7 +393,9 @@ class SecAnnual(_PerCik):
     def _frames(self, cik: int) -> pd.DataFrame | None:
         from engine.markets.us_smallcap import fundamentals as features
 
-        w = features.to_wide(features.stock_features(str(cik), cik))
+        w = features.to_wide(
+            features.stock_features(str(cik), cik, self.market.data_end)
+        )
         if w.empty:
             return None
         w = w.drop(columns="entity").sort_values("as_of", kind="stable")
@@ -370,14 +407,17 @@ class SecQuarterly(_PerCik):
     """One filing can report two quarter ends (e.g. a 10-K with the fourth quarter and a restated
     one) on the same date. Engine rule: the latest quarter end wins (rows arrive sorted by quarter
     end; the sort by filing date is stable). params.tie_order: legacy reproduces the pilot's
-    order instead, an unstable sort over every company's rows at once (reproduction only)."""
+    order instead, an unstable sort over every company's rows at once (reproduction only).
+    params.extended: also emit fundamentals.EXTENDED (growth acceleration, margin and R&D changes)."""
 
     name = "sec_quarterly"
 
     def _frames(self, cik: int) -> pd.DataFrame | None:
         from engine.markets.us_smallcap import fundamentals as features
 
-        q = features.quarterly_features(str(cik), cik)
+        q = features.quarterly_features(
+            str(cik), cik, bool(self.params.get("extended")), self.market.data_end
+        )
         if q.empty:
             return None
         q = q.dropna(subset=["filed"]).sort_values("filed", kind="stable")

@@ -107,7 +107,7 @@ periods:
 
 registry:
   file: data/engine/us_smallcap/registry.csv
-  inherit: [data/registry_aggregate.csv]   # the original research's judged tests: the count continues
+  inherit: [data/registry_aggregate.csv, data/engine/us_largecap/registry.csv]   # the original research's judged tests + us_largecap: one shared count
   check_limit: 30
   holdout_unlock_log: data/engine/us_smallcap/holdout_unlocks.csv
 

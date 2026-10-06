@@ -165,15 +165,24 @@ def build(
     spec: PanelSpec,
     cache_dir: Path | None = None,
     times: pd.DatetimeIndex | None = None,
+    with_labels: bool = True,
 ) -> Panel:
+    """with_labels=False: features only, no forward return is computed (e.g. a coverage check
+    before a pre-registration, or a study that prices its own holdings)."""
     if times is None:
         times = market.calendar.decision_times(spec.start, spec.end, spec.schedule)
     times = times[(times >= as_utc(spec.start)) & (times < as_utc(spec.end))]
     rows = universe_rows(market, times)
     _log(f"panel: {len(times)} decision times, {len(rows):,} universe rows")
-    labels = market.labels(rows[["entity_id", "decision_time"]], spec.horizon)
-    labels["decision_time"] = pd.to_datetime(labels["decision_time"], utc=True)
-    rows = rows.merge(labels, on=["entity_id", "decision_time"], how="left")
+    if with_labels:
+        labels = market.labels(rows[["entity_id", "decision_time"]], spec.horizon)
+        labels["decision_time"] = pd.to_datetime(labels["decision_time"], utc=True)
+        rows = rows.merge(labels, on=["entity_id", "decision_time"], how="left")
+    else:
+        nat = pd.Series(pd.NaT, index=rows.index, dtype="datetime64[ns, UTC]")
+        rows = rows.assign(
+            entry_time=nat, label_end=nat, fwd_return=np.nan, delisted=False
+        )
     feats: dict[str, pd.Series] = {}
     ats: dict[str, pd.Series] = {}
     # generated markets change their data with their settings: key the cache on them too

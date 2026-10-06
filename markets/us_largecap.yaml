@@ -1,0 +1,88 @@
+# US large caps: the 500 largest US filers each quarter (point-in-time, delisted companies included).
+# Same plug-in code as us_smallcap (EODHD bars, SEC filings, measured spreads, delisting rule); only
+# this file differs. Paths are relative to the repo root; caches live in ./.cache.
+#   uv run python -m engine.markets.us_smallcap.universe large --until 2019-12-31
+#   uv run python -m engine.markets.us_smallcap.spreads build --lists data/largecap_universe.csv \
+#       --out .cache/spreads_largecap.pkl --until 2019-12-31
+plugin: us_largecap
+data_end: "2019-12-31"       # bars, filings and 8-Ks after this are never read: check years stay shut
+
+calendar:
+  kind: trading
+  tz: America/New_York
+  close: "16:00"
+  decide_after_close: 30min
+
+universe:
+  file: data/largecap_universe.csv       # checked market value, top 500 a quarter (universe.large)
+  group: sector
+  exclude_name_regex: '\bACQUISITION (?:CORP|CO|COMPANY|HOLDINGS)\b'
+
+costs:
+  file: .cache/spreads_largecap.pkl      # measured round trips (Abdi-Ranaldo / Corwin-Schultz mean)
+
+schedule: BQE                # business quarter-ends: the formation dates
+labels:
+  horizon: 756               # 36 months of bars (the cohort test prices its own holdings)
+  min_history_bars: 0
+  drop_flat: false
+  ended_if_no_bar_for_days: 10
+
+sources:
+  price:
+    features: [px_mom_1m, px_mom_12_1, px_vol_3m, px_off_high, px_volume_trend]
+    params: {min_history_bars: 253}
+  sec_annual:
+    max_age_days: 455
+    lookback_days: 7300
+  sec_quarterly:
+    max_age_days: 199          # the latest 10-Q / 10-K quarter, if filed in the last ~6.5 months
+    lookback_days: 7300
+    params: {extended: true}   # + growth acceleration, operating-margin and R&D-intensity changes
+
+features:
+  inflection: [q_rev_growth_yoy_chg4, q_gross_margin_chg_yoy, q_op_margin_chg_yoy,
+               q_rnd_intensity_chg_yoy, q_rev_growth_yoy]
+  baseline: ["@inflection"]
+
+model:                       # unused by the cohort test (a fixed composite, no fitting)
+  name: ridge
+  alpha: 10.0
+  target: {within: null}
+  block: year
+  min_train_periods: 4
+
+periods:
+  tuning: ["2011-01-01", "2020-01-01"]
+  check: ["2020-01-01", "2024-01-01"]
+  holdout_start: "2024-01-01"
+
+registry:
+  file: data/engine/us_largecap/registry.csv
+  inherit: [data/registry_aggregate.csv, data/engine/us_smallcap/registry.csv]  # one shared count
+  check_limit: 30
+  holdout_unlock_log: data/engine/us_largecap/holdout_unlocks.csv
+
+# Pre-registered before any return was computed (see the commit that added it). `engine cohort
+# --market us_largecap --log` runs exactly this and logs ONE test; every flag variant is descriptive.
+# Pass: Newey-West t of the mean monthly net excess >= the registry's next bar at run time (shared
+# count with us_smallcap; 83 judged before it: 3.434) and the mean > 0. Months: Oct 2011 - Dec 2019
+# (99), about 2.75 independent 36-month periods. Power, assuming a 2.5%/month tracking error: SE
+# ~0.28%/month, so a true excess of ~1.0%/month (~12%/yr) is detected half the time, ~1.2%/month
+# (~15%/yr) 80% of the time; anything smaller is invisible here.
+cohort_test:
+  name: "inflection composite: large-cap top decile, 36-month overlapping cohorts"
+  sources: [sec_quarterly]
+  inputs:
+    - q_rev_growth_yoy_chg4     # 1. revenue growth acceleration: latest YoY growth minus YoY 4 quarters earlier
+    - q_gross_margin_chg_yoy    # 2. gross margin change vs a year ago
+    - q_op_margin_chg_yoy       # 3. operating margin change vs a year ago
+    - q_rnd_intensity_chg_yoy   # 4. R&D / revenue change vs a year ago (no R&D: median rank)
+    - q_rev_growth_yoy          # 5. revenue growth vs a year ago
+  require: [q_rev_growth_yoy]   # ranked only with a current revenue-growth figure
+  missing_rank: 0.5             # any other missing input gets the median rank
+  top: 0.10                     # top decile of the ranked names, equal weight
+  hold_quarters: 12             # 36 months; each day the portfolio holds the last 12 cohorts
+  first_formation: "2011-09-30"  # first quarter-end where >= 90% of ranked names have input 1 (coverage only)
+  last_formation: "2019-09-30"  # the last whose entry (next session) falls inside data_end
+  nw_lags: 12

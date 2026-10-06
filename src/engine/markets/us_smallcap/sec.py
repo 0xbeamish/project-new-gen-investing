@@ -79,8 +79,9 @@ def ticker_to_cik() -> dict[str, int]:
     return {row["ticker"]: row["cik_str"] for row in data.values()}
 
 
-def annual_facts(cik: int) -> pd.DataFrame:
-    """One row per (fiscal_year_end, concept): the value as first reported in a 10-K."""
+def annual_facts(cik: int, filed_until=None) -> pd.DataFrame:
+    """One row per (fiscal_year_end, concept): the value as first reported in a 10-K.
+    filed_until: ignore filings after this date (a market that must not read past its data end)."""
     data = _get_json(
         f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json",
         f"facts_{cik}.json",
@@ -112,6 +113,8 @@ def annual_facts(cik: int) -> pd.DataFrame:
     df = pd.DataFrame(rows)
     df["end"] = pd.to_datetime(df["end"])
     df["filed"] = pd.to_datetime(df["filed"])
+    if filed_until is not None:
+        df = df[df["filed"] <= pd.Timestamp(filed_until)]
     # Earliest filing for each period = the original number, not a restatement.
     return df.sort_values("filed").drop_duplicates(["concept", "end"], keep="first")
 
@@ -129,6 +132,8 @@ QUARTERLY_CONCEPTS = {
     "inventory": ["InventoryNet"],
 }
 FLOW = {"revenue", "gross_profit", "cost_of_revenue", "operating_income"}
+# opt-in flow items (quarterly_features(extended=True))
+EXTRA_QUARTERLY = {"rnd": CONCEPTS["rnd"]}
 
 
 def _first_filed(rows: list[dict]) -> pd.DataFrame:
@@ -139,19 +144,22 @@ def _first_filed(rows: list[dict]) -> pd.DataFrame:
     return df.sort_values("filed")
 
 
-def quarterly_facts(cik: int) -> pd.DataFrame:
+def quarterly_facts(cik: int, extra=(), filed_until=None) -> pd.DataFrame:
     """One row per (quarter_end, concept): the 3-month value as first reported, and when it was filed.
 
     Flow items: 3-month durations from 10-Qs and 10-Ks. Most companies never tag a 3-month Q4, so
     Q4 = full year minus the 9-month year-to-date, dated by the later of the two filings.
     Balance-sheet items (inventory): the value at quarter end.
+    extra: names in EXTRA_QUARTERLY to add (flow items); filed_until: ignore later filings.
     """
     data = _get_json(
         f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json",
         f"facts_{cik}.json",
     )
     rows = []
-    for concept, tags in QUARTERLY_CONCEPTS.items():
+    concepts = QUARTERLY_CONCEPTS | {k: EXTRA_QUARTERLY[k] for k in extra}
+    flow_set = FLOW | set(extra)
+    for concept, tags in concepts.items():
         for tag in tags:
             fact = data["facts"].get("us-gaap", {}).get(tag)
             if not fact:
@@ -173,8 +181,10 @@ def quarterly_facts(cik: int) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame(columns=cols)
     df = _first_filed(rows)
-    stock = df[~df["concept"].isin(FLOW)].drop_duplicates(["concept", "end"])[cols]
-    flow = df[df["concept"].isin(FLOW)].dropna(subset=["start"])
+    if filed_until is not None:
+        df = df[df["filed"] <= pd.Timestamp(filed_until)]
+    stock = df[~df["concept"].isin(flow_set)].drop_duplicates(["concept", "end"])[cols]
+    flow = df[df["concept"].isin(flow_set)].dropna(subset=["start"])
     flow = flow.assign(days=(flow["end"] - flow["start"]).dt.days)
     q = flow[flow["days"].between(80, 100)].drop_duplicates(["concept", "end"])
     fy = flow[flow["days"].between(350, 380)].drop_duplicates(["concept", "end"])

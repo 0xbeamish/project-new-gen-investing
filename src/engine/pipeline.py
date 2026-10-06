@@ -42,10 +42,19 @@ def stage_end(study, stage: str, grant: CheckGrant | None = None, final: bool = 
     raise ValueError(stage)
 
 
-def build_panel(study, stage: str = "tuning", grant=None, final=False, sources=None):
+def build_panel(
+    study,
+    stage: str = "tuning",
+    grant=None,
+    final=False,
+    sources=None,
+    with_labels=True,
+):
     end = stage_end(study, stage, grant, final)
     spec = study.panel_spec(study.periods.tuning[0], end, sources)
-    p = panel.build(study.market, spec, cache_dir=study.cache_dir)
+    p = panel.build(
+        study.market, spec, cache_dir=study.cache_dir, with_labels=with_labels
+    )
     pit.check_panel(p)  # a leak stops the run here
     return p
 

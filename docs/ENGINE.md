@@ -179,6 +179,8 @@ Test it like `tests/engine/test_pit.py`: a value stamped exactly at the decision
 1. A module under `engine/markets/` with a class implementing `universe`, `labels`, `cost_bps`
    and `calendar`, and `build(cfg) -> (market, {source name: source class})`.
    `engine/markets/synthetic.py` is the smallest complete example; `us_smallcap.py` is a real one.
+   `us_largecap` shows the cheap case: the small-cap plug-in reused with another universe list,
+   cost table and `data_end` (a date nothing after is read), in a 20-line module and one YAML.
 2. A YAML in `markets/<name>.yaml`: calendar, universe rules, label horizon, sources, feature sets
    (`baseline` is what every candidate must beat), model, portfolio rules, periods, registry.
 3. Decide the periods **before** looking at results, and write them in the YAML.
@@ -249,7 +251,8 @@ src/engine/            the engine
   pit.py               the point-in-time checker
   sample.py            winsorize, rank target, legacy batches
   models.py            Ridge / trees / ensembles, WalkForward (optional recency half-life, "auto")
-  scoring.py           IC, spreads, rank-weighted book, portfolios, t
+  scoring.py           IC, spreads, rank-weighted book, portfolios, t (iid, Newey-West)
+  cohorts.py           overlapping-cohort portfolios (buy and hold N formations); cohort_study.py runs one
   registry.py          registry, Bonferroni bar, periods, holdout lock
   pipeline.py          the standard run, with the period gates
   discovery.py         candidates, transforms, the judge, the loop
@@ -279,6 +282,7 @@ uv run engine decide   --market us_smallcap --decider jev --years 2013-2019 --es
 uv run engine text-eval --market synthetic_text
 uv run engine spend    --market us_smallcap
 uv run engine parity   --market us_smallcap           # only with the pilot's recorded results
+uv run engine cohort   --market us_largecap [--coverage | --log]   # long-horizon overlapping cohorts
 ```
 
 The us_smallcap plug-in keeps its caches in `./.cache` (EODHD prices, SEC JSON, Form 4 data sets,

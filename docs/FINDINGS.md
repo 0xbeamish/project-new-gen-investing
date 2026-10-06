@@ -11,7 +11,9 @@ LLM-read earnings releases ranks next month's winners above its losers (rank IC 
 tuning years), but no portfolio built from it earns a significant return after measured trading
 costs, and no LLM layer (as reader inputs, as a decider, with or without feedback) beats the
 version without it; a month-by-month replay of the self-adjusting loops did not beat the frozen
-system either. The market prices "did X happen" within days.
+system either. The market prices "did X happen" within days. A slow signal in large caps did no
+better: a pre-registered test of visibly inflecting fundamentals, held 36 months, earned nothing
+over the large-cap universe (t 0.04).
 
 ## Honesty rules (enforced by code where possible)
 
@@ -160,6 +162,56 @@ Where there is an edge, it is about the size of the cost of trading it.
   planted U-shaped field; the ladder fixes both; when the true error is a mis-weighted numeric input
   correlated with a text field, the coordinator leaves the text question alone and the outer refit
   fixes it.
+
+### Large caps, multi-year holds (us_largecap)
+The "catch the business while it inflects, hold for years" bet that retail investors made on a
+handful of famous names. Earlier tests ranked small/mid caps monthly and excluded the 500 largest.
+- **Market.** us_largecap reuses the us_smallcap plug-in (prices, SEC filings, measured spreads,
+  the delisting rule) through configuration only. It reads nothing after 2019-12-31: not prices,
+  not filings, not 8-Ks.
+- **Universe.** The 500 largest US filers each quarter, point-in-time, delisted companies
+  included: 890 companies over 33 formations, 496-500 a quarter. 156 of them stopped trading
+  inside the window; their delisting returns are counted.
+- **Universe data errors.** The raw size rank had fake giants: XBRL share counts off by 1,000x,
+  and vendor closes 10-1,000x the traded price, some back-adjusted for a *later* reverse split.
+  Those would pull future collapses into a large-cap list. The list now ranks a value checked
+  against the SEC-reported public float, carried forward by adjusted returns; foreign (20-F/40-F)
+  filers are dropped. Estimated residual: 1 row in 17,446.
+- **Costs.** Measured round trips: median 33 bp (IQR 22-49).
+- **Test** (pre-registered in 65b7966 before any return; one logged test). The signal is an
+  equal-weight mean of percentile ranks of five point-in-time 10-Q/10-K inputs: revenue growth
+  acceleration, gross margin change, operating margin change, R&D-intensity change, and revenue
+  growth.
+  - Formation: quarterly, 2011-09 to 2019-09. 2011-09 is the first quarter-end with the
+    acceleration input for 90% of ranked names.
+  - Portfolio: the top decile, about 39 names. Buy and hold 36 months; overlapping cohorts.
+  - Benchmark: the equal-weight universe, same construction. Both net of measured costs.
+  - Result: monthly net excess **+0.005%, Newey-West t 0.04** (bar 3.43; 99 months). Gross
+    +0.007%. Costs are 0.016%/month: at a 36-month hold they no longer matter, and there is no
+    edge for them to eat.
+- **Descriptive** (not logged), monthly net excess (t):
+
+  | variant | excess / month (t) |
+  |---|---|
+  | 24-month hold | -0.10% (-0.75) |
+  | 12-month hold | -0.13% (-0.88) |
+  | top 10 names, 36 months | -0.08% (-0.38) |
+  | composite top minus bottom decile | +0.05% (0.37) |
+  | acceleration, decile spread | -0.08% (-0.76) |
+  | gross margin change | -0.00% (-0.01) |
+  | operating margin change | +0.05% (0.47) |
+  | R&D-intensity change | -0.06% (-0.35) |
+  | revenue growth | -0.01% (-0.04) |
+
+  A foresight score (each name's realized next-12-month return) through the same harness:
+  +1.44%/month, t 5.4. The harness finds an edge when one exists.
+- **Power.** 99 months is about 2.75 independent 36-month periods. The realized tracking error,
+  1.3%/month, gives a standard error of about 0.11%/month. So the test detects a true excess of
+  about 0.4%/month (~5%/year) half the time and about 0.5%/month (~6%/year) 80% of the time.
+  It rules out a large, reliable edge for this composite; it cannot rule out a small one.
+- **The famous names.** Whether the two names that prompted this were in the top decile in
+  2013-2016 is anecdote: choosing them is hindsight. It was looked at descriptively and is
+  company-level, so it isn't recorded here.
 
 ## What would change the conclusion
 
