@@ -186,3 +186,28 @@ def test_newey_west_t_matches_iid_without_lags_and_shrinks_with_autocorrelation(
     assert score.newey_west_t(x, 0) == pytest.approx(score.per_period_t(x) * np.sqrt(n / (n - 1)))
     smooth = x.rolling(12).mean().dropna()  # overlapping windows: strong positive autocorrelation
     assert score.newey_west_t(smooth, 12) < 0.6 * score.per_period_t(smooth)
+
+
+# ---------------------------------------------------------------- minimum detectable effect
+def test_mde_reproduces_the_large_cap_hand_calculation():
+    """docs/FINDINGS.md, us_largecap: 99 months, standard error about 0.11%/month, bar 3.43 ->
+    detects about 0.4%/month half the time and about 0.5%/month 80% of the time."""
+    se, n, bar = 0.0011, 99, 3.434
+    sd = se * np.sqrt(n)  # per-period noise that gives that standard error
+    assert score.mde(sd, n, bar, 0.5) == pytest.approx(0.004, abs=0.0005)
+    assert score.mde(sd, n, bar, 0.8) == pytest.approx(0.005, abs=0.0005)
+    assert score.mde(sd, n, bar, 0.5) == pytest.approx(bar * se)  # 50% power: bar x SE
+    assert np.isnan(score.mde(sd, 2, bar, 0.8))
+
+
+def test_mde_is_what_the_test_detects_with_that_power():
+    """Simulate the t-test at a true effect equal to the MDE: it clears the bar ~80% / ~50% of the
+    time."""
+    rng = np.random.default_rng(0)
+    n, sd, bar = 60, 0.1, 2.5
+    for power in (0.5, 0.8):
+        effect = score.mde(sd, n, bar, power)
+        hits = [
+            score.per_period_t(pd.Series(rng.normal(effect, sd, n))) >= bar for _ in range(4000)
+        ]
+        assert np.mean(hits) == pytest.approx(power, abs=0.04)

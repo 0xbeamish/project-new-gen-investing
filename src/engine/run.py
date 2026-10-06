@@ -276,6 +276,54 @@ def report_holdout(study: Study, features: str, reason: str) -> dict:
     return {"holdout": evaluate(study, scored, "holdout")}
 
 
+# ---------------------------------------------------------------- power: what a test can see
+def power_check(
+    units: str, noise_sd: float, periods: int, bar: float, overlap: int, noise_from: str, what=""
+) -> dict:
+    """The minimum detectable effect (MDE) at the test's bar with 50% and 80% power, from noise
+    measured before the result; printed before the test runs and stored with its registry row."""
+    m50, m80 = (score.mde(noise_sd, periods, bar, p, overlap) for p in (0.5, 0.8))
+    out = {
+        "units": units,
+        "periods": int(periods),
+        "noise_sd": float(noise_sd),
+        "noise_from": noise_from,
+        "bar": round(bar, 3),
+        "mde_50": m50,
+        "mde_80": m80,
+        "underpowered": bool(m80 > score.PLAUSIBLE[units]),  # False for NaN
+    }
+    verdict = (
+        f"UNDERPOWERED: effects below {m80:.4g} are likely missed, and that is above "
+        f"{score.PLAUSIBLE[units]:g}, more than any edge this research has measured; a miss can only "
+        "say 'couldn't tell'"
+        if out["underpowered"]
+        else "a miss says the effect, if any, is smaller than this"
+    )
+    _log(
+        f"Minimum detectable effect ({what or units}), {periods} periods, noise sd {noise_sd:.4g} "
+        f"({noise_from}), bar t >= {bar:.2f}: {m80:.4g} with 80% power, {m50:.4g} with 50%. {verdict}"
+    )
+    return out
+
+
+def _ic_noise(study, frame, base, scope: str, wf) -> tuple[float, int, str]:
+    """Per-period noise of a rank IC on tuning periods, from the BASELINE model (never the
+    candidate): the sd of its per-period IC, or, with no baseline, the null sd 1/sqrt(N - 1) of a
+    rank correlation over N names."""
+    if base is not None:
+        b = base if scope == "universal" else base[base["group"] == scope]
+        ic = score.rank_ic(b).dropna()
+        return float(ic.std(ddof=1)), len(ic), "the baseline's per-period rank IC"
+    f = frame.assign(_flat=0.0)
+    scored = in_stage(study, wf.run(f, ["_flat"], study.market.calendar)[0], "tuning")
+    if scope != "universal":
+        scored = scored[scored["group"] == scope]
+    n = scored.groupby("decision_time").size()
+    n = n[n > 2]
+    return float(np.sqrt((1 / (n - 1)).mean())), len(n), "null sd of a rank IC, 1/sqrt(N-1)"
+
+
 # ---------------------------------------------------------------- candidates: test and discover
 @dataclass(frozen=True)
 class Candidate:
@@ -329,17 +377,27 @@ def ic_gain(base: pd.DataFrame | None, cand: pd.DataFrame, scope: str) -> pd.Ser
     return (ic if base is None else ic - score.rank_ic(base)).dropna()
 
 
-def _gain(study, frame, baseline, c, wf, stage) -> pd.Series:
+def _base(study, frame, baseline, wf, stage):
+    """The baseline model's scores on the stage (None for an empty baseline)."""
+    return (
+        in_stage(study, wf.run(frame, baseline, study.market.calendar)[0], stage)
+        if baseline
+        else None
+    )
+
+
+def _gain(study, frame, baseline, c, wf, stage, base=None) -> pd.Series:
     f, cols = with_candidate(frame, c)
-    cal = study.market.calendar
-    base = in_stage(study, wf.run(f, baseline, cal)[0], stage) if baseline else None
-    cand = in_stage(study, wf.run(f, baseline + cols, cal)[0], stage)
+    base = base if base is not None else _base(study, f, baseline, wf, stage)
+    cand = in_stage(study, wf.run(f, baseline + cols, study.market.calendar)[0], stage)
     return ic_gain(base, cand, c.scope)
 
 
-def judge(study, frame, baseline: list[str], c: Candidate, wf: model.WalkForward) -> dict:
+def judge(
+    study, frame, baseline: list[str], c: Candidate, wf: model.WalkForward, base=None
+) -> dict:
     """Tuning-period statistics for one candidate (no bars, no logging)."""
-    gain = _gain(study, frame, baseline, c, wf, "tuning")
+    gain = _gain(study, frame, baseline, c, wf, "tuning", base)
     return {
         "t_tune": score.per_period_t(gain, label_overlap(study)),
         "gain_tune": float(gain.mean()),
@@ -364,7 +422,11 @@ def test_candidate(
     wf = wf or walk_forward(study)
     reg = study.registry
     bar = reg.next_bar()
-    res = judge(study, frame, baseline, c, wf)
+    base = _base(study, frame, baseline, wf, "tuning")  # the baseline needs no candidate column
+    noise, n, src = _ic_noise(study, frame, base, c.scope, wf)
+    what = "rank IC gain over the baseline" if baseline else "rank IC"
+    power = power_check("rank IC", noise, n, bar, label_overlap(study), src, what)
+    res = judge(study, frame, baseline, c, wf, base)
     row = {
         "kind": "test",
         "name": c.name,
@@ -377,6 +439,8 @@ def test_candidate(
         "check_used": False,
         "kept": False,
         "note": (note + f" {res['periods']} periods").strip(),
+        "mde_50": round(power["mde_50"], 5),
+        "mde_80": round(power["mde_80"], 5),
     }
     if res["t_tune"] >= bar:  # only now is the check period looked at
         grant = reg.open_check()
@@ -602,12 +666,37 @@ class CohortTest:
         }
 
 
+def cohort_power(study: Study) -> dict | None:
+    """The cohort test's MDE before any return is computed: months from the first entry to the
+    data's end, noise = the tracking error assumed in the YAML (`cohort_test.noise_monthly`)."""
+    c = study.cfg["cohort_test"]
+    if not c.get("noise_monthly"):
+        _log(
+            "cohort test: set cohort_test.noise_monthly (the assumed tracking error) to see its MDE"
+        )
+        return None
+    first = pd.Period(pd.Timestamp(c["first_formation"]), "M") + 1
+    last = pd.Period(pd.Timestamp(c["last_formation"]), "M") + 3 * int(c["hold_quarters"])
+    if study.cfg.get("data_end"):
+        last = min(last, pd.Period(pd.Timestamp(study.cfg["data_end"]), "M"))
+    months = (last - first).n + 1
+    return power_check(
+        "excess return per month",
+        float(c["noise_monthly"]),
+        months,
+        study.registry.next_bar(),
+        1,
+        "the tracking error assumed in the YAML",
+        "monthly net excess over the benchmark",
+    )
+
+
 def cohort_test_logged(study: Study) -> bool:
     """Whether the pre-registered cohort test already has its one look in the registry."""
     return bool((study.registry.own()["name"] == study.cfg["cohort_test"]["name"]).any())
 
 
-def log_cohort_test(study: Study, res: dict, note: str) -> dict:
+def log_cohort_test(study: Study, res: dict, note: str, power: dict | None = None) -> dict:
     """Log the pre-registered cohort test as ONE judged test (refused if already logged)."""
     c = study.cfg["cohort_test"]
     if cohort_test_logged(study):
@@ -629,4 +718,9 @@ def log_cohort_test(study: Study, res: dict, note: str) -> dict:
             "kept": bool(t >= bar and res["excess_net"] > 0),
             "note": note,
         }
+        | (
+            {"mde_50": round(power["mde_50"], 6), "mde_80": round(power["mde_80"], 6)}
+            if power
+            else {}
+        )
     )

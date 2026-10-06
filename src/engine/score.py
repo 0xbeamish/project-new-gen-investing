@@ -54,6 +54,22 @@ def newey_west_t(series, lags: int) -> float:
     return float(x.mean() / np.sqrt(var / n)) if var > 0 else float("nan")
 
 
+# The largest edge this research has measured is a rank IC near 0.035 and a net excess near 0.2% a
+# month; a test that can't see effects well above these can only say "couldn't tell".
+PLAUSIBLE = {"rank IC": 0.05, "excess return per month": 0.01, "net return per period": 0.01}
+
+
+def mde(noise_sd: float, periods: int, bar: float, power: float, overlap: int = 1) -> float:
+    """Minimum detectable effect: the smallest true mean a t-test over `periods` periods, with this
+    per-period noise, clears `bar` with probability `power`: (bar + z_power) x sd x sqrt(overlap)
+    / sqrt(periods). At 50% power that is bar x the standard error."""
+    from scipy.stats import norm
+
+    if periods < 3 or not noise_sd > 0:
+        return float("nan")
+    return float((bar + norm.ppf(power)) * noise_sd * np.sqrt(overlap) / np.sqrt(periods))
+
+
 def overlap(horizon_bars: int, bars_between_decisions: int) -> int:
     """How many decisions' label windows overlap one another (1 = none)."""
     return max(1, int(np.ceil(horizon_bars / max(1, bars_between_decisions))))

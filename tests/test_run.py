@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from engine import data, run
+from engine import data, run, score
 from engine.run import Candidate
 
 
@@ -127,3 +127,35 @@ def test_cohort_portfolio_enters_after_formation_and_rolls_hold_cohorts():
     # 10 bp in, 10 bp out per cohort, net only
     gap = m.loc[pd.Period("2015-04"), "gross"] - m.loc[pd.Period("2015-04"), "net"]
     assert gap == pytest.approx(0.001, rel=0.05)
+
+
+def test_a_test_prints_and_stores_its_mde_from_the_baseline_before_the_result(
+    study, tuning_rows, capsys
+):
+    row = run.test_candidate(study, tuning_rows, ["noise_1"], Candidate("noise_2"))
+    err = capsys.readouterr().err
+    assert "Minimum detectable effect (rank IC gain over the baseline)" in err
+    assert "the baseline's per-period rank IC" in err  # noise from the baseline, not the candidate
+    assert 0 < row["mde_50"] < row["mde_80"]
+    wf = run.walk_forward(study)
+    base = run._base(study, tuning_rows, ["noise_1"], wf, "tuning")
+    ic = score.rank_ic(base).dropna()
+    expect = score.mde(ic.std(ddof=1), len(ic), row["bar_tune"], 0.8)
+    assert row["mde_80"] == pytest.approx(expect, rel=1e-3)
+    assert study.registry.own()["mde_80"].iloc[0] == pytest.approx(row["mde_80"])
+
+
+def test_the_cohort_tests_mde_uses_its_months_and_the_assumed_noise(tmp_path):
+    """us_largecap's design: Oct 2011 - Dec 2019 is 99 months; noise = the YAML's assumed 2.5%."""
+    from types import SimpleNamespace
+
+    from engine.registry import Registry, required_t
+
+    cfg = run.read_config("us_largecap")
+    st = SimpleNamespace(cfg=cfg, registry=Registry(tmp_path / "r.csv", "m"))
+    p = run.cohort_power(st)
+    assert p["periods"] == 99 and p["noise_sd"] == 0.025
+    assert p["mde_50"] == pytest.approx(required_t(1) * 0.025 / 99**0.5)  # bar x SE
+    assert p["underpowered"] is False  # 0.49%/month at the first bar...
+    st.registry = Registry(tmp_path / "r.csv", "m", [run.path("data/registry_aggregate.csv")])
+    assert run.cohort_power(st)["mde_80"] > p["mde_80"]  # ...and more after 84 earlier tests

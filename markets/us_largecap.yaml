@@ -87,3 +87,4 @@ cohort_test:
   first_formation: "2011-09-30"  # first quarter-end where >= 90% of ranked names have input 1 (coverage only)
   last_formation: "2019-09-30"  # the last whose entry (next session) falls inside data_end
   nw_lags: 12
+  noise_monthly: 0.025          # the tracking error assumed above, for the MDE printed before a run

@@ -112,11 +112,12 @@ def cmd_test(study, args) -> None:
         c = run.Candidate(args.feature, args.transform, args.scope)
         _print(run.test_candidate(study, rows, study.feature_set("baseline"), c, note=note))
     elif study.cfg.get("cohort_test"):
+        power = run.cohort_power(study)
         if run.cohort_test_logged(study):
             raise SystemExit("the cohort test is already in the registry: one look only")
         res = run.CohortTest(study).run()
         res.pop("_monthly")
-        res["registry"] = run.log_cohort_test(study, res, note)
+        res["registry"] = run.log_cohort_test(study, res, note, power)
         _print(res)
     else:
         raise SystemExit("test needs --feature or --decider (or a cohort_test block in the YAML)")

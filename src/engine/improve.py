@@ -126,6 +126,20 @@ def run_loop(
         ),
     )
     bar = study.registry.next_bar()
+    power = None
+    if log:  # the MDE before the result, from the FROZEN twin's own per-period book
+        fr = frozen_scores(study, rows, feats)
+        fr = score.fill_costs(fr[fr["decision_time"].isin(replay_periods(study, rows, cfg.years))])
+        net = score.simulate_portfolio(fr, score.Band(*cfg.band))["net"].dropna()
+        power = run.power_check(
+            "net return per period",
+            float(net.std(ddof=1)) if len(net) > 2 else float("nan"),
+            len(net),
+            bar,
+            run.label_overlap(study),
+            "proxy: the sd of the FROZEN twin's per-period V1 net",
+            "V1 net per period, loop ON minus FROZEN",
+        )
     res = replay(
         study,
         feats,
@@ -181,6 +195,8 @@ def run_loop(
                 "gain_tune": round(r["diff_net"], 6),
                 "check_used": False,
                 "kept": bool(r["diff_net_t"] >= bar and r["diff_net"] > 0),
+                "mde_50": round(power["mde_50"], 6),
+                "mde_80": round(power["mde_80"], 6),
                 "note": (
                     f"{note} {r['periods']} paired periods {s['years'][0]}-{s['years'][1]}; rank IC diff "
                     f"{r['diff_ic']:+.4f} (t {r['diff_ic_t']:.2f}); {res['inner_judged']} changes "

@@ -15,8 +15,8 @@ system does and what each step showed.
 |---|---|---|
 | 1. install | `uv sync` | finishes without errors |
 | 2. demo | `uv run engine demo` (~2.5 min) | six numbered sections. In section 6A, `x_value`'s weight climbs from about 0 to about 29 (x100) against a true 30, and the inner loop re-encodes `txt_demand_level` (t 2.48). In 6B (the trap), `x_value` falls from about 50 to about 5 while "inner-loop changes to the demand question: none" |
-| 3. a real signal | `uv run engine test --market csv_example --feature flow` | `t_tune` about 11.2 vs `bar_tune` 1.96, `check_used: true`, `kept: true`. This opens csv_example's check period by itself, which is fine on the toy markets (demo, csv_example). On a research market, ask the user before any `test` (see the rules) |
-| 4. noise | `uv run engine test --market csv_example --feature social` | `t_tune` about 1.0 vs `bar_tune` about 2.24 (the bar rose because step 3 was logged), `kept: false` |
+| 3. a real signal | `uv run engine test --market csv_example --feature flow` | first a line "Minimum detectable effect (rank IC), 91 periods ...: 0.05613 with 80% power, 0.03927 with 50%. UNDERPOWERED ..." (30 tokens can only see a rank IC above about 0.056; the planted `flow` is about 0.19), then `t_tune` about 11.2 vs `bar_tune` 1.96, `check_used: true`, `kept: true`, and the row stores `mde_80` 0.05613. This opens csv_example's check period by itself, which is fine on the toy markets (demo, csv_example). On a research market, ask the user before any `test` (see the rules) |
+| 4. noise | `uv run engine test --market csv_example --feature social` | MDE 0.06177 at 80% (the higher bar needs a bigger effect), then `t_tune` about 1.0 vs `bar_tune` about 2.24 (the bar rose because step 3 was logged), `kept: false` |
 | 5. the feedback loop | `uv run engine loop --market csv_example` | "91 periods ... (52 with both ON and FROZEN returns)". In the weights table (x100) the planted inputs carry the largest weights by the end: the two planted text signals, `doc_exploit_p` about −21 (posts reporting an exploit) and `doc_upgrade_p` about +14 (posts saying an upgrade shipped), and the planted number `flow`, rising from about 6 to 16–20; `social` (noise) stays near 0. "Changes judged end to end: 0, accepted: 0; brakes: 0" (a brake would be the coordinator freezing a field or undoing a change; its line says why), and "question splits proposed: 3 ... 0 helped enough on the diagnosis entities to be judged". ON vs FROZEN t near 0. Three files in `results/csv_example/` |
 | 6. tests | `uv run pytest -q` (~3 min) | all pass |
 
@@ -51,6 +51,12 @@ Keys, only if the user gives them: copy `.env.example` to `.env` (git-ignored). 
 | `test` | ONE judged test, logged whatever the result: `--feature` (+ `--transform`, `--scope`), or `--decider`, or the YAML's `cohort_test` | JSON: the registry row (t_tune vs bar_tune, check used, kept) |
 | `discover` | candidates from the YAML (or every feature x transform), each a logged test, until one is kept | JSON list of registry rows |
 | `grade-text` | the text eval harness on the market's eval sets (`--split dev`) | JSON summary (S, A-E, gates) and a keep / drop table per question |
+
+**Check the minimum detectable effect (MDE) before reading a test's result.** `test` (and
+`loop --log`, and the cohort test) first prints the smallest true effect it could detect at the
+current bar with 80% and 50% power, from noise measured on the baseline (never the candidate), and
+stores it in the registry row. If the MDE is huge, flagged UNDERPOWERED, a miss can only say
+"couldn't tell", not "no effect"; say so to the user.
 
 **`engine loop` is the main way to evaluate a new data source over time**: `test` asks whether one
 input helps on average; `loop` shows how every weight moves as returns close, whether a text field

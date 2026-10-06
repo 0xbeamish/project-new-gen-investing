@@ -352,6 +352,7 @@ def test_loop_log_writes_exactly_one_registry_row_and_only_once(tmp_path):
     reg = run.study_from_config("demo", cfg).registry
     tests = reg.own()[reg.own()["kind"] == "test"]
     assert len(tests) == 1 and tests["name"].iloc[0] == cfg["loop"]["name"]  # ONE test
+    assert tests["mde_80"].iloc[0] > tests["mde_50"].iloc[0] > 0  # its MDE, from FROZEN's noise
     internal = reg.own()[reg.own()["kind"] == "loop_internal"]
     assert len(internal) <= 1  # plus, if it judged any, one row counting its internal judgments
     with pytest.raises(SystemExit):  # one look only

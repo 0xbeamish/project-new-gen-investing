@@ -84,7 +84,11 @@ included: 1.96 at the first, 2.81 at the 10th, 3.63 at the 174th (the next one h
 one group). The judge runs the walk-forward with and without it; the statistic is the per-period
 difference in rank IC (with an empty baseline, the candidate's own rank IC). It must reach the
 registry's next bar; then the check period opens and `kept` needs the check bar and a positive
-check-period gain. `discover` proposes candidates (the YAML's list, or every feature x transform)
+check-period gain. Before the result, a test prints its minimum detectable effect: the smallest
+true effect it would catch at the current bar with 80% and 50% power, (bar + z) x noise sd x
+sqrt(overlap) / sqrt(periods), with the noise measured on the baseline model (with an empty
+baseline, the null sd of a rank IC, 1/sqrt(N - 1)); it is stored in the registry row, and a test
+whose MDE exceeds any edge measured so far is flagged UNDERPOWERED. `discover` proposes candidates (the YAML's list, or every feature x transform)
 until one is kept or a stop rule fires. A YAML `cohort_test:` block pre-registers a fixed composite
 held for years; `engine test` with no feature runs it once and logs it.
 
