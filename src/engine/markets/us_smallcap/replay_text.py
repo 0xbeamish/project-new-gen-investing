@@ -35,8 +35,10 @@ class ReplayText:
         ledger: Ledger,
         step: str = "jev_replay",
         manifest: str = ".cache/earnings_releases.csv",
+        planned_reread_usd: float | None = None,
     ):
         self.study, self.ledger, self.step = study, ledger, step
+        self.planned = planned_reread_usd  # measured-cost plan for one uncached re-read
         self.manifest = manifest
         self.rows_v1 = pipeline.rows(study, pipeline.build_panel(study, "tuning"))
         self.versions = {"v1": self.rows_v1}
@@ -67,9 +69,10 @@ class ReplayText:
     def estimate(self, q: tq.Question) -> float:
         qs = {"earnings_release": tq.QuestionSet("earnings_release", [q])}
         cache = readers.AnswerCache(self.cache)
-        return readers.estimate(
+        worst = readers.estimate(
             readers.JevReader(), self.docs(), qs, self.ledger, cache
         )["usd"]
+        return self.planned if (self.planned is not None and worst > 0) else worst
 
     def make_version(self, field: str, qd: dict):
         """Re-read every release for the new question (paid), attach it point in time, register."""
@@ -83,7 +86,13 @@ class ReplayText:
             )
             return None
         ans = readers.read_all(
-            readers.JevReader(), self.docs(), qs, self.ledger, self.step, self.cache
+            readers.JevReader(),
+            self.docs(),
+            qs,
+            self.ledger,
+            self.step,
+            self.cache,
+            planned_usd=usd,
         )
         w = tf.answers_frame(self.docs(), ans, qs, "earn")
         col = f"earn_{q.id}_p"
@@ -175,7 +184,10 @@ def main(study, args) -> None:
         manifest=study.cfg.get("replay", {}).get(
             "manifest", ".cache/earnings_releases.csv"
         ),
+        planned_reread_usd=study.cfg.get("replay", {}).get("planned_reread_usd"),
     )
+    refit = args.refit or "M"
+    recency = None if (args.recency or "auto") == "none" else "auto"
     probe = tq.Question(
         "probe_phrase", "yes_no", "The text says: 'raised its full year'."
     )
@@ -187,18 +199,32 @@ def main(study, args) -> None:
         "step": step,
         "cap_left": round(cap_left, 2),
         "question_splits_allowed": splits,
+        "refit": refit,
+        "recency": recency,
+        "typesafe_funds_left": round(
+            ledger.funds.get("typesafe", 0.0) - ledger.spent(provider="typesafe"), 2
+        ),
         "claude_replay": "not used (free phrase proposer)",
     }
     print(json.dumps(est, indent=1))
     if args.estimate:
         return
+    floor = float(args.min_funds_left or 0.0)
+    if est["typesafe_funds_left"] - splits * per_split < floor:
+        raise SystemExit(
+            f"stop: TypeSafe funds would fall below ${floor:.2f} "
+            f"(${est['typesafe_funds_left']:.2f} left, up to ${splits * per_split:.2f} planned)"
+        )
     proposer = loops.ResidualPhraseProposer(
         rt.docs_for, rt.make_version, max_proposals=splits
     )
-    cfg = replay.ReplayConfig()
+    cfg = replay.ReplayConfig(
+        recency=recency,
+        loops=loops.LoopsConfig(block=refit, half_lives=(), persist_k=3, cooldown=6),
+    )
     bar = study.registry.next_bar()
     n0 = study.registry.n_judged()
-    out_dir = Path(study.cache_dir) / "replay"
+    out_dir = Path(study.cache_dir) / f"replay_{step}"
 
     def progress(k, t, co):
         acc = sum(1 for e in co.events if e.accepted and e.loop != "brake")
@@ -226,7 +252,7 @@ def main(study, args) -> None:
         res["registry"] = study.registry.record(
             {
                 "kind": "test",
-                "name": "replay: loops ON vs FROZEN",
+                "name": f"replay: loops ON vs FROZEN (refit {refit}, recency {recency})",
                 "features": "baseline",
                 "scope": "universal",
                 "metric": "V1 low-turnover portfolio net of measured costs, monthly ON minus FROZEN",

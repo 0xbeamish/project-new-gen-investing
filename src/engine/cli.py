@@ -212,6 +212,13 @@ def main(argv=None) -> None:
     ap.add_argument("--step", help="decide: spend-ledger step")
     ap.add_argument("--split", default="dev", help="text-eval: dev | test")
     ap.add_argument("--quick", action="store_true", help="demo: fewer iterations")
+    ap.add_argument("--refit", help="replay: M (monthly) | year")
+    ap.add_argument("--recency", help="replay: auto | none")
+    ap.add_argument(
+        "--min-funds-left",
+        type=float,
+        help="replay: stop if TypeSafe funds would fall below",
+    )
     args = ap.parse_args(argv)
     os.chdir(config.ROOT)  # plug-ins read paths relative to the repo root
     if args.cmd == "demo":

@@ -385,3 +385,15 @@ def test_auto_recency_is_chosen_yearly_moves_one_step_and_follows_a_regime_chang
     assert (
         min(yearly[2016], yearly[2017]) < yearly[2015]
     )  # the flip shortens it within 2 years
+
+
+def test_alarm_and_persistence_count_refits_not_cycles(small_text):
+    st, rows = small_text
+    co = coordinator(st, rows, block="year")
+    cuts = pd.date_range(
+        "2012-04-01", "2015-01-01", freq="QS", tz="UTC"
+    )  # 12 quarterly cycles
+    co.run(cuts)
+    refits = len({c.year for c in cuts})  # the latest yearly refit changes once a year
+    assert max(len(v) for v in co.weight_signs.values()) <= refits
+    assert all(sum(v.values()) <= 3 * refits for v in co.streak.values())

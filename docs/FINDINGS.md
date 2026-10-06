@@ -146,6 +146,16 @@ Where there is an edge, it is about the size of the cost of trading it.
   the fixed alarm still froze 29 of 59 inputs (a fixed 36-month half-life: 12; no recency
   weighting: 4). With monthly refits, any recency weighting makes most weights wander, so the
   pre-set gate (<= 8 frozen) failed and the replay was not run.
+- **Replay options** (pre-registered together; alarm and persistence now count refits):
+  - Option 1, monthly refits, no recency weighting: 4 of 59 frozen, gate passed, run and logged.
+    ON minus FROZEN +0.015%/month, **t 0.26** (bar 3.43); rank IC +0.0056 (t 1.75); turnover 2.7x
+    vs 2.6x. 34 changes judged inside (drops, encodings; best t 1.15), none accepted; the one
+    question split hit the re-read cache. Cost $0.
+  - Option 2, yearly refits, recency chosen yearly: 19 of 59 frozen over 7 refits, gate failed,
+    not run. Descriptively its outer loop alone lowers rank IC vs FROZEN (-0.009, t -2.15).
+  - Descriptive, not logged: option 1's outer loop vs option 2's, rank IC +0.015 (t 2.45), V1 net
+    +0.076%/month (t 0.78). Recency weighting hurt on this data; more frequent refits without it
+    helped IC a little, not net returns.
 - **Loops on synthetic markets** (docs/TEXT.md): tracking flags a planted over-weighted field and a
   planted U-shaped field; the ladder fixes both; when the true error is a mis-weighted numeric input
   correlated with a text field, the coordinator leaves the text question alone and the outer refit

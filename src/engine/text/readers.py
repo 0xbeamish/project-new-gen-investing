@@ -456,6 +456,7 @@ def read_all(
     workers: int = 8,
     chunk: int = 300,
     estimate_only: bool = False,
+    planned_usd: float | None = None,
 ) -> dict:
     """(doc_id, entity_id) -> {question id: answer}. Paid readers: estimate, then guarded chunks."""
     if not getattr(reader, "cacheable", True):
@@ -466,6 +467,10 @@ def read_all(
         if ledger is None or step is None:
             raise BudgetExceeded("a paid reader needs a spend ledger and a step")
         usd = sum(reader.estimate_usd(d, qs, ledger) for d, qs in todo)
+        if (
+            planned_usd is not None and todo
+        ):  # a measured-cost plan replaces the worst case
+            usd = planned_usd
         print(
             f"{reader.name}: {len(todo):,} documents to read, projected ${usd:.2f} (worst case)",
             file=sys.stderr,

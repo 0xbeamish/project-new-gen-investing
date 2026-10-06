@@ -208,6 +208,7 @@ class Coordinator:
             None
         )
         self.weight_signs: dict[str, list[float]] = {}
+        self._last_block = None
         self.question_texts: dict[str, list[str]] = {}
         self._cache: dict = {}
         self.reports: list[dict] = []
@@ -441,7 +442,12 @@ class Coordinator:
             self.timeline.append((pd.Timestamp.min.tz_localize("UTC"), self.cur))
         scored, w, enc, cols = self.scores(self.cur)
         w_now = w[[self._block_start(b) < cutoff for b in w.index]]
-        self._oscillation(w_now, k, cutoff)
+        # the alarm and the persistence rule count REFITS, not cycles: with yearly refits a monthly
+        # cycle sees the same weights 12 times, which must not count as 12 observations
+        new_refit = bool(len(w_now)) and w_now.index[-1] != self._last_block
+        if new_refit:
+            self._last_block = w_now.index[-1]
+            self._oscillation(w_now, k, cutoff)
         diag = [
             e
             for e in enc["entity_id"].unique()
@@ -461,7 +467,7 @@ class Coordinator:
         )
         self.reports.append({"cycle": k, "cutoff": cutoff, "flags": rep["flags"]})
         fl = rep["flags"].set_index("field")
-        for f in fl.index:
+        for f in fl.index if new_refit else []:
             s = self.streak.setdefault(f, {"misweight": 0, "shape": 0, "misread": 0})
             s["misweight"] = s["misweight"] + 1 if fl.loc[f, "status"] != "ok" else 0
             s["shape"] = s["shape"] + 1 if fl.loc[f, "non_linear"] else 0
