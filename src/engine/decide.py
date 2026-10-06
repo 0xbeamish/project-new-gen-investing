@@ -204,8 +204,17 @@ def ic_table(rows: pd.DataFrame, features: list[str]) -> tuple[pd.DataFrame, pd.
     tab = {}
     for t, idx in rows.groupby("decision_time").groups.items():
         x, y = ranked.loc[idx], target.loc[idx]
-        tab[t] = x.corrwith(y)  # Pearson on ranks = Spearman (ties averaged)
+        tab[t] = pd.Series({c: _corr(x[c], y) for c in x.columns}, dtype=float)
     return pd.DataFrame(tab).T.sort_index(), rows.groupby("decision_time")["label_end"].max()
+
+
+def _corr(a: pd.Series, b: pd.Series) -> float:
+    """Pearson over the pairs both have (on ranks = Spearman); NaN when either has no spread, e.g.
+    an answer level that no one in the period gave."""
+    ok = a.notna() & b.notna()
+    if ok.sum() < 2 or a[ok].nunique() < 2 or b[ok].nunique() < 2:
+        return float("nan")
+    return float(b[ok].corr(a[ok]))
 
 
 def input_record(tab: pd.DataFrame, ends: pd.Series, t, min_periods: int = 12) -> pd.DataFrame:
