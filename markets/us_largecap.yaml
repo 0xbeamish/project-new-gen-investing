@@ -1,10 +1,10 @@
 # US large caps: the 500 largest US filers each quarter (point-in-time, delisted companies included).
-# Same plug-in code as us_smallcap (EODHD bars, SEC filings, measured spreads, delisting rule); only
-# this file differs. Paths are relative to the repo root; caches live in ./.cache.
-#   uv run python -m engine.markets.us_smallcap.universe large --until 2019-12-31
-#   uv run python -m engine.markets.us_smallcap.spreads build --lists data/largecap_universe.csv \
+# Same plug-in as us_smallcap (EODHD bars, SEC filings, measured spreads, delisting rule); only this
+# file differs. Paths are relative to the repo root; caches live in ./.cache.
+#   uv run python -m engine.markets.us_stocks.universe large --until 2019-12-31
+#   uv run python -m engine.markets.us_stocks.prices spreads --lists data/largecap_universe.csv \
 #       --out .cache/spreads_largecap.pkl --until 2019-12-31
-plugin: us_largecap
+plugin: us_stocks
 data_end: "2019-12-31"       # bars, filings and 8-Ks after this are never read: check years stay shut
 
 calendar:
@@ -63,8 +63,9 @@ registry:
   check_limit: 30
   holdout_unlock_log: data/engine/us_largecap/holdout_unlocks.csv
 
-# Pre-registered before any return was computed (see the commit that added it). `engine cohort
-# --market us_largecap --log` runs exactly this and logs ONE test; every flag variant is descriptive.
+# Pre-registered before any return was computed (see the commit that added it). `engine test
+# --market us_largecap` runs exactly this and logs ONE test (already done: it refuses a second look);
+# variants through engine.run.CohortTest(study).run(top=, hold=, inputs=, spread=) are descriptive.
 # Pass: Newey-West t of the mean monthly net excess >= the registry's next bar at run time (shared
 # count with us_smallcap; 83 judged before it: 3.434) and the mean > 0. Months: Oct 2011 - Dec 2019
 # (99), about 2.75 independent 36-month periods. Power, assuming a 2.5%/month tracking error: SE

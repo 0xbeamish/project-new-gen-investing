@@ -1,4 +1,5 @@
-"""Question sets as config: one YAML per doc_type (or a bundle of doc_types sharing blocks).
+"""Question sets as config: one YAML per doc_type (or a bundle of doc_types sharing blocks),
+typed, tagged reading / judgment, and versioned.
 
 Every question is typed and tagged:
 
@@ -68,31 +69,28 @@ class Question:
 
     @property
     def key(self) -> str:
+        """id@vN: answers stay attached to the version that produced them."""
         return f"{self.id}@v{self.version}"
 
     @property
     def gold_kind(self) -> str:
         """How the answer key stores it: bool | choice | level."""
-        return {"yes_no": "bool", "probability": "bool", "choice": "choice"}.get(
-            self.kind, "level"
-        )
+        return {"yes_no": "bool", "probability": "bool", "choice": "choice"}.get(self.kind, "level")
 
     def outcomes(self) -> list:
+        """The options of a choice, or the levels 0-4."""
         return list(self.options) if self.kind == "choice" else LEVELS
 
     def text(self) -> str:
         """The full wording a reader sees (prompt + anchors): what versioning and loops compare."""
         if self.kind == "scale":
-            return (
-                self.prompt
-                + " "
-                + " · ".join(f"{i} {a}" for i, a in enumerate(self.levels))
-            )
+            return self.prompt + " " + " · ".join(f"{i} {a}" for i, a in enumerate(self.levels))
         if self.kind == "choice":
             return self.prompt + " Options: " + ", ".join(self.options)
         return self.prompt
 
     def to_dict(self) -> dict:
+        """The YAML form (empty fields left out)."""
         d = asdict(self)
         d["options"], d["levels"] = list(self.options), list(self.levels)
         return {k: v for k, v in d.items() if v not in ((), [], None, "")}
@@ -117,9 +115,11 @@ class QuestionSet:
         return len(self.questions)
 
     def get(self, qid: str) -> Question:
+        """The question with this id."""
         return next(q for q in self.questions if q.id == qid)
 
     def ids(self) -> list[str]:
+        """Question ids in order."""
         return [q.id for q in self.questions]
 
     def reading(self) -> list[Question]:
@@ -127,9 +127,11 @@ class QuestionSet:
         return [q for q in self.questions if q.tag == "reading"]
 
     def judgment(self) -> list[Question]:
+        """Questions only markets can grade."""
         return [q for q in self.questions if q.tag == "judgment"]
 
     def fingerprint(self) -> str:
+        """A hash of the wording (panel caches key on it)."""
         body = json.dumps([q.to_dict() for q in self.questions], sort_keys=True)
         return hashlib.sha256(body.encode()).hexdigest()[:16]
 
@@ -141,6 +143,7 @@ class QuestionSet:
         return QuestionSet(self.doc_type, qs, self.version + 1, dict(self.meta))
 
     def without(self, qid: str) -> QuestionSet:
+        """A new set without that question."""
         return QuestionSet(
             self.doc_type,
             [q for q in self.questions if q.id != qid],
@@ -149,6 +152,7 @@ class QuestionSet:
         )
 
     def to_yaml(self) -> str:
+        """The set as YAML."""
         return yaml.safe_dump(
             {
                 "doc_type": self.doc_type,
@@ -162,6 +166,7 @@ class QuestionSet:
 
 
 def question(d: dict) -> Question:
+    """A Question from its YAML dict."""
     d = dict(d)
     for k in ("options", "levels"):
         if k in d:
@@ -180,9 +185,7 @@ def load(path: str | Path) -> dict[str, QuestionSet]:
             cfg.get("meta", {}),
         )
         return {qs.doc_type: qs}
-    blocks = {
-        name: {q["id"]: question(q) for q in qs} for name, qs in cfg["blocks"].items()
-    }
+    blocks = {name: {q["id"]: question(q) for q in qs} for name, qs in cfg["blocks"].items()}
     out = {}
     for dt, parts in cfg["doc_types"].items():
         picked: list[Question] = []
@@ -192,9 +195,7 @@ def load(path: str | Path) -> dict[str, QuestionSet]:
                 picked.append(blocks[b][qid])
             else:
                 picked += list(blocks[p].values())
-        out[dt] = QuestionSet(
-            dt, picked, int(cfg.get("version", 1)), cfg.get("meta", {})
-        )
+        out[dt] = QuestionSet(dt, picked, int(cfg.get("version", 1)), cfg.get("meta", {}))
     return out
 
 

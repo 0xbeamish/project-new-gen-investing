@@ -1,6 +1,5 @@
-"""Market plug-in: what an asset class must provide to be researched.
-
-A Market answers five questions, all point-in-time:
+"""What a market plug-in must provide: universe, labels, costs, calendar, all point-in-time.
+A plug-in module exposes build(cfg) -> (market, {source name: source factory}).
 
   universe(as_of)       who is tradable at this decision time: entity_id, group (sector, chain...),
                         plus any attributes (name, market value). Survivors-only universes lie.
@@ -11,7 +10,7 @@ A Market answers five questions, all point-in-time:
                         because the window simply hasn't finished, the label is NaN. Returns
                         entry_time and label_end too (training rows are purged on label_end).
   cost_bps(rows)        round-trip trading cost per row in basis points (NaN = unknown)
-  calendar              decision times and local-date handling (engine.calendar)
+  calendar              decision times and local-date handling (engine.data.TradingCalendar)
   group                 the universe's `group` column; optional (all one group if absent)
 
 forward_returns() below implements the label convention once, from a bar series, so markets
@@ -37,6 +36,8 @@ LABEL_COLUMNS = [
 
 @runtime_checkable
 class Market(Protocol):
+    """The contract above; engine.markets.demo is the smallest complete example."""
+
     name: str
     calendar: object
 
@@ -67,9 +68,7 @@ def forward_returns(
     drop_flat     NaN when the window has < 3 bars or zero variance (stale quotes, not a price)
     """
     n = len(prices)
-    pos = close_times.searchsorted(
-        decision_times, side="right"
-    )  # first bar closing after T
+    pos = close_times.searchsorted(decision_times, side="right")  # first bar closing after T
     out = []
     for t, i in zip(decision_times, pos):
         row = {

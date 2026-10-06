@@ -1,7 +1,8 @@
 # US small/mid caps (small/mid market values, point-in-time, delisted companies included).
-# Paths are relative to the repo root; caches live in ./.cache. Fill them with `engine fetch`
-# (SEC_USER_AGENT, EODHD_API_KEY in .env) after `python -m engine.markets.us_smallcap.universe build`.
-plugin: us_smallcap
+# Paths are relative to the repo root; caches live in ./.cache. Fill them with
+# `engine build --fetch --market us_smallcap` (SEC_USER_AGENT, EODHD_API_KEY in .env) after
+# `python -m engine.markets.us_stocks.universe build`.
+plugin: us_stocks
 
 calendar:
   kind: trading
@@ -23,7 +24,7 @@ labels:
   winsorize: [0.01, 0.99]    # per decision time, before ranks and averages
 
 # max_age_days counts calendar days from the day a value became usable (the day AFTER filing) to the
-# decision date. The pilot counted from the filing date: its 456 / 200 days are 455 / 199 here.
+# decision date.
 sources:
   universe_size:
     features: [px_log_mcap]
@@ -87,14 +88,6 @@ model:
   block: year
   min_train_periods: 12
   embargo_days: 0
-  # Legacy reproduction only (see docs/ENGINE.md, "Parity"): random batches of 10 per sector-month
-  # with leftovers dropped, the target demeaned within batch, the pilot's 31-day purge, and its
-  # (unstable) order for 10-Q rows filed on the same day.
-  legacy:
-    batches: {size: 10, by: group, seed: 0}
-    purge_days: 31
-    source_params:
-      sec_quarterly: {tie_order: legacy}
 
 portfolio:
   band: {enter: 0.9, exit: 0.7}        # V1: buy the sector top decile, hold until out of the top 30%
@@ -107,7 +100,7 @@ periods:
 
 registry:
   file: data/engine/us_smallcap/registry.csv
-  inherit: [data/registry_aggregate.csv, data/engine/us_largecap/registry.csv]   # the original research's judged tests + us_largecap: one shared count
+  inherit: [data/registry_aggregate.csv, data/engine/us_largecap/registry.csv]   # earlier research + us_largecap: one shared count
   check_limit: 30
   holdout_unlock_log: data/engine/us_smallcap/holdout_unlocks.csv
 

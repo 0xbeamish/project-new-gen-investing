@@ -1,14 +1,16 @@
 """Signal-research engine: any data source in, one honest evaluation out.
 
-Contracts (each module documents its own):
-  observations  what a Source emits: entity_id, available_at (UTC), source, feature, value
-  market        what an asset class provides: universe, bars/labels, costs, calendar, groups
-  panel         decision schedule x universe -> latest point-in-time value per feature + label
-  models        walk-forward models over per-period ranks
-  scoring       the one scorer: rank IC, quantile spreads, portfolios, per-period t
-  registry      every judged test, the Bonferroni bar, gated check years, the locked holdout
-  discovery     candidate = feature + transform, judged against the market's baseline
-  decider       optional LLM layer over model cards (off by default)
+  data      the observation and document contracts, calendars, the point-in-time checker
+  panel     decision schedule x universe -> point-in-time panel -> model rows
+  model     walk-forward models over per-period ranks
+  score     the one scorer (rank IC, spreads, portfolios, t) and overlapping cohorts
+  registry  every judged test, the rising bar, gated check years, the locked holdout
+  run       a market YAML -> Study; build, report, test, discover, the cohort test
+  decide    the optional AI decider and its feedback note
+  improve   the tracking-driven ladder, the loop coordinator, the history replay
+  spend     caps on every paid call
+  text/     documents -> questions -> readers -> inputs, and whether each question is worth it
+  markets/  plug-ins: demo (synthetic), csv (your files), us_stocks (SEC + EODHD)
 
-See docs/ENGINE.md.
+See docs/HOW_IT_WORKS.md.
 """

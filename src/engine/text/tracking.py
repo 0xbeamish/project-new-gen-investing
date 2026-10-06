@@ -2,7 +2,7 @@
 
 A free report (no LLM) the loops write after every closed period. Everything here reads only
 CLOSED periods (labels ended before the cutoff) of the DIAGNOSIS entities; the frozen test split
-is kept for accepting fixes (engine.loops).
+is kept for accepting fixes (engine.improve).
 
 1. residual attribution  each period, rank the model's residual (realized - predicted target) and
                          regress it on the ranked inputs, one at a time AND jointly. A slope with
@@ -19,19 +19,17 @@ is kept for accepting fixes (engine.loops).
 4. reading quality       gold skill, spot-check corrections and probe stability per question:
                          separates "misread" from "mis-weighted"
 5. decider overrides     the decider's departures from the model, split by which text fields
-                         were the strongest lines on the card it picked
+                         were the strongest lines on the card it picked (engine.decide.override_split,
+                         passed in as `overrides`)
 """
 
 from __future__ import annotations
-
-import json
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
 
-from engine import models, scoring
+from engine import model, score
 
 FLAG_T = 2.0
 CALIB_T = 2.5
@@ -42,7 +40,7 @@ def _crank(s: pd.Series, by: pd.Series) -> pd.Series:
     return s.groupby(by).rank(pct=True) - 0.5
 
 
-def frame(
+def residual_frame(
     rows: pd.DataFrame, scored: pd.DataFrame, cutoff=None, entities=None
 ) -> pd.DataFrame:
     """rows (target, inputs, label_end) joined to the walk-forward scores; closed periods only."""
@@ -50,9 +48,7 @@ def frame(
     f = scored[["entity_id", "decision_time", "score", "block"]].merge(
         rows[keep], on=["entity_id", "decision_time"], how="inner"
     )
-    f["y"] = f["fwd_rank"] - f.groupby(["decision_time", "group"])[
-        "fwd_rank"
-    ].transform("mean")
+    f["y"] = f["fwd_rank"] - f.groupby(["decision_time", "group"])["fwd_rank"].transform("mean")
     f["resid"] = f["y"] - f["score"]
     if cutoff is not None:
         f = f[f["label_end"] < pd.Timestamp(cutoff)]
@@ -64,7 +60,8 @@ def frame(
 def attribution(
     f: pd.DataFrame, features: list[str], weights: pd.DataFrame, overlap: int = 1
 ) -> pd.DataFrame:
-    X = models.rank_features(f, features)
+    """Residual slopes per field, one at a time and jointly; status from the joint t vs the weight."""
+    X = model.rank_features(f, features)
     r = _crank(f["resid"], f["decision_time"])
     uni, joint = {c: {} for c in features}, {c: {} for c in features}
     for t, idx in f.groupby("decision_time").groups.items():
@@ -74,9 +71,7 @@ def attribution(
             continue
         for j, c in enumerate(features):
             v = x[:, j].var()
-            uni[c][t] = (
-                float(np.cov(x[:, j], y, bias=True)[0, 1] / v) if v > 0 else np.nan
-            )
+            uni[c][t] = float(np.cov(x[:, j], y, bias=True)[0, 1] / v) if v > 0 else np.nan
         A = np.column_stack([np.ones(len(y)), x])
         coef = np.linalg.lstsq(A, y, rcond=None)[0][1:]
         for j, c in enumerate(features):
@@ -86,27 +81,23 @@ def attribution(
     for c in features:
         su, sj = pd.Series(uni[c]).sort_index(), pd.Series(joint[c]).sort_index()
         w = float(last_w.get(c, 0.0))
-        tj = scoring.per_period_t(sj, overlap)
+        tj = score.per_period_t(sj, overlap)
         status = "ok"
         if abs(tj) >= FLAG_T:
             if abs(w) < 1e-9:
                 status = "missing"
             else:
-                status = (
-                    "under-weighted"
-                    if np.sign(sj.mean()) == np.sign(w)
-                    else "over-weighted"
-                )
+                status = "under-weighted" if np.sign(sj.mean()) == np.sign(w) else "over-weighted"
         rows.append(
             {
                 "field": c,
                 "weight": w,
                 "slope_one_at_a_time": float(su.mean()),
-                "t_one_at_a_time": scoring.per_period_t(su, overlap),
+                "t_one_at_a_time": score.per_period_t(su, overlap),
                 "slope_joint": float(sj.mean()),
                 "t_joint": tj,
-                "t_joint_12": scoring.per_period_t(sj.tail(12), overlap),
-                "t_joint_24": scoring.per_period_t(sj.tail(24), overlap),
+                "t_joint_12": score.per_period_t(sj.tail(12), overlap),
+                "t_joint_24": score.per_period_t(sj.tail(24), overlap),
                 "periods": len(sj),
                 "status": status,
             }
@@ -115,6 +106,7 @@ def attribution(
 
 
 def levels_of(x: pd.Series, kind: str) -> pd.Series:
+    """Answer levels: 0-4 for a scale, 0/1 for a probability."""
     if kind == "scale":
         return x.round().clip(0, 4)
     return (x >= 0.5).astype(float).where(x.notna())
@@ -130,12 +122,12 @@ def calibration(
     overlap: int = 1,
 ) -> pd.DataFrame:
     """Per answer level: realized partial residual vs the model's implied effect, de-linearized."""
-    contrib = models.contributions(f, features, weights, calendar)
+    contrib = model.contributions(f, features, weights, calendar)
     c = contrib[field].reindex(f.index)
     # take out what the OTHER inputs' mis-weights explain (joint, per period), so a mis-weighted
     # correlated input can't paint a shape on this field
     others = [x for x in features if x != field]
-    X = models.rank_features(f, others)
+    X = model.rank_features(f, others)
     clean = f["resid"].copy()
     for idx in f.groupby("decision_time").groups.values():
         A = np.column_stack([np.ones(len(idx)), X.loc[idx].to_numpy()])
@@ -173,15 +165,16 @@ def calibration(
                 "realized": float(g.loc[g["lev"] == k, "realized"].mean()),
                 "implied": float(g.loc[g["lev"] == k, "implied"].mean()),
                 "gap": float(per[k].mean()),
-                "gap_t": scoring.per_period_t(per[k], overlap),
+                "gap_t": score.per_period_t(per[k], overlap),
                 "shape_dev": float(dev[k].mean()),
-                "shape_t": scoring.per_period_t(dev[k], overlap),
+                "shape_t": score.per_period_t(dev[k], overlap),
             }
         )
     return pd.DataFrame(out)
 
 
 def rolling_ic(f: pd.DataFrame, features: list[str], overlap: int = 1) -> pd.DataFrame:
+    """Per-field rank IC, rolling 12 / 24, and decay: the last 24 periods vs the earlier ones."""
     rows = []
     for c in features:
         ic = (
@@ -211,7 +204,7 @@ def rolling_ic(f: pd.DataFrame, features: list[str], overlap: int = 1) -> pd.Dat
             {
                 "field": c,
                 "ic": float(ic.mean()),
-                "ic_t": scoring.per_period_t(ic, overlap),
+                "ic_t": score.per_period_t(ic, overlap),
                 "ic_12": float(ic.tail(12).mean()),
                 "ic_24": float(ic.tail(24).mean()),
                 "early": float(early.mean()) if len(early) else np.nan,
@@ -231,6 +224,9 @@ def reading_quality(
     stable_min: float = 0.8,
     wrong_max: float = 0.15,
 ) -> pd.DataFrame:
+    """Per question: misread if gold skill, probe stability or spot-check errors are past their
+    thresholds. Pass the result as `reading` to report() / Coordinator to separate "misread" from
+    "mis-weighted"."""
     qids = sorted(set(per_field_gold) | set(stability) | set(spotcheck_wrong or {}))
     rows = []
     for q in qids:
@@ -255,31 +251,6 @@ def reading_quality(
     return pd.DataFrame(rows)
 
 
-def override_split(decisions: pd.DataFrame, drivers: dict) -> pd.DataFrame:
-    """decisions: decider.run output (+ decision_time); drivers: batch -> text fields that led the
-    picked card. Per field: overrides it drove, mean pick-minus-model excess, t over periods."""
-    o = decisions[decisions["override"]].copy()
-    rows = []
-    fields = sorted({f for v in drivers.values() for f in v})
-    for fld in fields:
-        m = o[o["batch"].map(lambda b, fld=fld: fld in drivers.get(b, ()))]
-        if m.empty:
-            continue
-        gain = (m["pick_excess"] - m["model_excess"]).groupby(m["decision_time"]).mean()
-        rows.append(
-            {
-                "field": fld,
-                "overrides": len(m),
-                "gain_vs_model": float(gain.mean()),
-                "t": scoring.per_period_t(gain),
-                "won_share": float((m["pick_excess"] > m["model_excess"]).mean()),
-            }
-        )
-    return pd.DataFrame(
-        rows, columns=["field", "overrides", "gain_vs_model", "t", "won_share"]
-    )
-
-
 def report(
     rows: pd.DataFrame,
     scored: pd.DataFrame,
@@ -294,10 +265,8 @@ def report(
     overlap: int = 1,
 ) -> dict:
     """The full tracking report for one closed period. text_meta: feature -> {question, kind, ...}."""
-    f = frame(rows, scored, cutoff, entities)
-    if (
-        f["decision_time"].nunique() < 3
-    ):  # nothing closed yet (the first out-of-sample months)
+    f = residual_frame(rows, scored, cutoff, entities)
+    if f["decision_time"].nunique() < 3:  # nothing closed yet (the first out-of-sample months)
         cols = [
             "field",
             "status",
@@ -331,9 +300,7 @@ def report(
             and meta.get("encoding") == "level"
             and meta.get("kind") in ("scale", "yes_no", "probability")
         ):
-            cal.append(
-                calibration(f, c, meta["kind"], features, weights, calendar, overlap)
-            )
+            cal.append(calibration(f, c, meta["kind"], features, weights, calendar, overlap))
     cal = pd.concat(cal, ignore_index=True) if cal else pd.DataFrame()
     shape = (
         cal.groupby("field")["shape_t"]
@@ -350,9 +317,7 @@ def report(
     )
     flags["non_linear"] = flags["max_shape_t"].fillna(0) >= CALIB_T
     flags["text"] = flags["field"].isin(list(text_meta))
-    flags["question"] = flags["field"].map(
-        lambda c: (text_meta.get(c) or {}).get("question")
-    )
+    flags["question"] = flags["field"].map(lambda c: (text_meta.get(c) or {}).get("question"))
     if reading is not None and len(reading):
         mis = dict(zip(reading["question"], reading["misread"]))
         flags["misread"] = flags["question"].map(lambda q: bool(mis.get(q, False)))
@@ -366,54 +331,4 @@ def report(
         "reading": reading,
         "overrides": overrides,
         "flags": flags,
-    }
-
-
-def write(rep: dict, out_dir: Path, label: str) -> Path:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    body = {"label": label, "periods": rep["periods"]}
-    for k in ("attribution", "calibration", "ic", "reading", "overrides", "flags"):
-        v = rep.get(k)
-        body[k] = (
-            v.replace({np.nan: None}).to_dict("records")
-            if isinstance(v, pd.DataFrame)
-            else v
-        )
-    p = out_dir / f"tracking_{label}.json"
-    p.write_text(json.dumps(body, indent=1, default=str))
-    return p
-
-
-def leave_out_residuals(
-    rows: pd.DataFrame, features: list[str], drop: list[str], wf, calendar
-) -> pd.DataFrame:
-    """Residuals of the FULL model refit without `drop` (e.g. every text field): the part of the
-    return the text has to explain. Residual mining for the ladder ranks documents on this."""
-    keep = [c for c in features if c not in drop]
-    scored, _ = wf.run(rows, keep, calendar)
-    f = frame(rows, scored)
-    return f[["entity_id", "decision_time", "resid"]]
-
-
-def incremental_value(
-    rows: pd.DataFrame,
-    features: list[str],
-    cols: list[str],
-    wf,
-    calendar,
-    overlap: int = 1,
-    cutoff=None,
-) -> dict:
-    """A field's value = the full model's rank IC with it minus without it, per period (never its
-    raw correlation with returns)."""
-    with_, _ = wf.run(rows, features, calendar)
-    without, _ = wf.run(rows, [c for c in features if c not in cols], calendar)
-    if cutoff is not None:
-        with_ = with_[with_["decision_time"] < pd.Timestamp(cutoff)]
-        without = without[without["decision_time"] < pd.Timestamp(cutoff)]
-    gain = (scoring.rank_ic(with_) - scoring.rank_ic(without)).dropna()
-    return {
-        "gain": float(gain.mean()),
-        "t": scoring.per_period_t(gain, overlap),
-        "periods": len(gain),
     }

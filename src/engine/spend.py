@@ -1,7 +1,5 @@
-"""Spend ledger with per-step caps, for every paid model call the engine makes.
-
-Generalizes the pilot's cost control (jev.costs): text readers (Jev, Claude), the text-loop and
-ladder proposers, and the optional deciders all go through one Ledger.
+"""AI spend caps: one ledger, with a cap per step, for every paid model call the engine makes
+(text readers, the question-loop proposer, the optional deciders).
 
   estimate first   every paid run prints its projected cost before the first call (worst case:
                    Jev by characters / 2, Claude by counted input tokens + full max_tokens)
@@ -9,8 +7,8 @@ ladder proposers, and the optional deciders all go through one Ledger.
                    past the funds loaded in that account
   record           append what the API actually reports to the ledger CSV
 
-Caps live in config (market YAML `spend:`), defaults below. Same CSV columns as the pilot's ledger,
-so one file can serve both.
+Caps live in config (market YAML `spend:`), defaults below. `Ledger.from_config(cfg).report()`
+prints spent vs cap per step.
 """
 
 from __future__ import annotations
@@ -90,6 +88,7 @@ class Ledger:
         output_tokens: float = 0,
         batch: bool = False,
     ) -> float:
+        """USD for a token count at list price (half with the batch discount)."""
         p = self.prices[model]
         usd = (input_tokens * p["input"] + output_tokens * p.get("output", 0.0)) / 1e6
         return usd * (BATCH_DISCOUNT if batch else 1.0)
@@ -99,27 +98,24 @@ class Ledger:
         return self.price(model, chars / CHARS_PER_TOKEN_FLOOR)
 
     def frame(self) -> pd.DataFrame:
-        return (
-            pd.read_csv(self.path)
-            if self.path.exists()
-            else pd.DataFrame(columns=FIELDS)
-        )
+        """Every recorded call."""
+        return pd.read_csv(self.path) if self.path.exists() else pd.DataFrame(columns=FIELDS)
 
     def spent(self, step: str | None = None, provider: str | None = None) -> float:
+        """USD recorded so far, for one step or one provider (or all)."""
         df = self.frame()
         if step:
             df = df[df["step"] == step]
         if provider:
-            df = df[
-                df["model"].map(lambda m: self.prices.get(m, {}).get("provider"))
-                == provider
-            ]
+            df = df[df["model"].map(lambda m: self.prices.get(m, {}).get("provider")) == provider]
         return float(df["usd"].sum())
 
     def remaining(self, step: str) -> float:
+        """USD left under a step's cap."""
         return self.step_caps.get(step, 0.0) - self.spent(step)
 
     def guard(self, step: str, model: str, projected_usd: float) -> None:
+        """Raise BudgetExceeded if the projection would pass the step's cap or the loaded funds."""
         if step not in self.step_caps:
             raise BudgetExceeded(f"unknown step {step!r}: give it a cap first")
         provider = self.prices[model]["provider"]
@@ -146,6 +142,7 @@ class Ledger:
         note: str = "",
         batch: bool = False,
     ) -> float:
+        """Append what the API actually reported; returns its USD."""
         usd = self.price(model, input_tokens, output_tokens, batch)
         new = not self.path.exists()
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -155,9 +152,7 @@ class Ledger:
                 w.writeheader()
             w.writerow(
                 {
-                    "timestamp": pd.Timestamp.now(tz="UTC").strftime(
-                        "%Y-%m-%dT%H:%M:%SZ"
-                    ),
+                    "timestamp": pd.Timestamp.now(tz="UTC").strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "step": step,
                     "model": model,
                     "batch": batch,

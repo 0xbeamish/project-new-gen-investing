@@ -1,22 +1,23 @@
-"""engine demo | fetch|build|report|test|discover|parity|decide|text-eval|spend --market <name>
+"""The `engine` command: six commands, and `engine demo`, the whole system on a synthetic market.
 
-demo      the whole system on a synthetic market: no keys, no downloads
+  demo        everything on the demo market (numbers + documents with planted signals): no keys,
+              no downloads, about 90 seconds
+  build       the tuning-period panel, point-in-time checked; prints coverage per feature.
+              --fetch first lets each source fill its cache (the only step that uses the network)
+  report      a feature set's model on tuning periods: rank IC, spreads, portfolios net of costs,
+              plus the registry (tests so far, next bar, check uses, holdout looks). Descriptive,
+              never logged. --decider runs an AI decider over the model's cards (descriptive);
+              --final opens the holdout ONCE, asks for a reason and logs the look first
+  test        ONE judged test, logged whatever the result: --feature (+ --transform, --scope)
+              against the baseline; --decider (decider vs the model's own pick); with neither, the
+              YAML's pre-registered cohort_test. The check period opens only if tuning clears the bar
+  discover    the discovery loop: candidates from the YAML (or every feature x transform), each a
+              logged test, until one is kept or a stop rule fires
+  grade-text  the text eval harness on the market's eval sets: S = 0.30 A + 0.25 B + 0.30 C +
+              0.10 D + 0.05 E, the leak gate, and a keep / drop per question
 
-fetch     each source fills its own cache (the only step that may use the network)
-build     the tuning-period panel, point-in-time checked; prints coverage per feature
-report    the baseline model on tuning periods: rank IC, spreads, portfolios (descriptive, not
-          logged), plus the registry: tests so far, next bars, check uses, holdout looks.
-          --final opens the holdout ONCE and logs the look first
-test      one pre-registered candidate (--feature, --transform, --scope), judged and logged
-discover  the discovery loop over the config's candidates (or every feature x transform)
-parity    reproduce the pilot's recorded numbers (us_smallcap; never logged)
-decide    a decider over the model's cards with the feedback note (--estimate first; --log)
-text-eval the text eval harness on the market's eval sets (needs the plug-in's eval_sets)
-spend     the spend ledger: spent vs cap per step
-replay    loops ON vs FROZEN month by month over tuning years (--estimate first; --log = ONE test)
-cohort    the YAML's cohort_test (overlapping long-horizon cohorts): --coverage (no returns), the
-          design (descriptive), --log (ONE test), or variants --hold / --top / --input --spread /
-          --names (descriptive, never logged)
+Paid steps (--decider jev | claude, paid readers in the YAML) print a cost estimate first and stop
+at their spend cap; --estimate prints only the estimate.
 """
 
 from __future__ import annotations
@@ -24,268 +25,288 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
+import tempfile
+from pathlib import Path
 
 import pandas as pd
 
-from engine import config, discovery, parity, pipeline
+from engine import decide, improve, markets, panel, run
+from engine.text import grade, read
+from engine.text import improve as text_improve
+from engine.text import questions as tq
+
+COMMANDS = ["demo", "build", "report", "test", "discover", "grade-text"]
+
+
+def load_env(path: Path | None = None) -> None:
+    """KEY=VALUE lines from the repo's .env into the environment (never printed, never committed)."""
+    path = path or run.ROOT / ".env"
+    if not path.exists():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
 def _print(obj) -> None:
     print(
         json.dumps(
-            obj,
-            indent=1,
-            default=lambda x: round(float(x), 5) if isinstance(x, float) else str(x),
+            obj, indent=1, default=lambda x: round(float(x), 5) if isinstance(x, float) else str(x)
         )
     )
-
-
-def cmd_fetch(study, args) -> None:
-    lo, hi = study.periods.tuning[0], study.periods.check[1]
-    for name, s in study.sources.items():
-        print(f"fetch {name}", file=sys.stderr)
-        s.source.fetch(lo - pd.Timedelta(days=s.lookback_days), hi)
 
 
 def cmd_build(study, args) -> None:
-    p = pipeline.build_panel(study, "tuning")
-    f = p.frame
-    cover = {c: round(float(f[c].notna().mean()), 3) for c in p.features}
+    """Panel + point-in-time check + coverage (after fetching, with --fetch)."""
+    if args.fetch:
+        run.fetch(study)
+    f = run.build_panel(study, "tuning")
     _print(
         {
-            "rows": len(f),
-            "decision_times": int(f["decision_time"].nunique()),
-            "entities": int(f["entity_id"].nunique()),
-            "labelled": int(f["fwd_return"].notna().sum()),
-            "coverage": cover,
+            "rows": len(f.frame),
+            "decision_times": int(f.frame["decision_time"].nunique()),
+            "entities": int(f.frame["entity_id"].nunique()),
+            "labelled": int(f.frame["fwd_return"].notna().sum()),
+            "coverage": {c: round(float(f.frame[c].notna().mean()), 3) for c in f.features},
         }
     )
-
-
-def _scored(study, features: list[str], legacy: bool):
-    p = parity.legacy_panel(study) if legacy else pipeline.build_panel(study, "tuning")
-    rows = pipeline.rows(study, p, legacy=legacy)
-    wf = pipeline.walk_forward(study, legacy=legacy)
-    return wf.run(rows, features, study.market.calendar)
 
 
 def cmd_report(study, args) -> None:
-    feats = study.feature_set(args.features)
+    """Descriptive report; the holdout only with --final."""
     if args.final:
         reason = input("Reason for opening the holdout (logged): ").strip()
-        study.holdout.unlock(study.name, reason)
-        p = pipeline.build_panel(study, "holdout", final=True)
-        rows = pipeline.rows(study, p)
-        scored, _ = pipeline.walk_forward(study).run(rows, feats, study.market.calendar)
-        _print({"holdout": pipeline.evaluate(study, scored, "holdout")})
-        return
-    scored, weights = _scored(study, feats, args.legacy)
-    ev = pipeline.evaluate(study, scored, "tuning")
-    avg = weights.mean().sort_values() if len(weights) else pd.Series(dtype=float)
-    _print(
-        {
-            "features": args.features,
-            "tuning": ev,
-            "average_weights_x100": (pd.concat([avg.head(5), avg.tail(5)]) * 100)
-            .round(2)
-            .to_dict(),
-            "registry": study.registry.summary(),
-            "holdout_looks": study.holdout.looks(),
-        }
-    )
+        _print(run.report_holdout(study, args.features, reason))
+    elif args.decider:
+        _print(decide.run_decider(study, args.decider, args.features, estimate_only=args.estimate))
+    else:
+        _print(run.report(study, args.features))
 
 
 def cmd_test(study, args) -> None:
-    p = pipeline.build_panel(study, "tuning")
-    rows = pipeline.rows(study, p)
-    c = discovery.Candidate(args.feature, args.transform, args.scope)
-    _print(
-        discovery.test_candidate(
-            study, rows, study.feature_set("baseline"), c, note=args.note or ""
+    """One logged test: a feature, a decider, or the YAML's cohort test."""
+    note = args.note or ""
+    if args.decider:
+        _print(
+            decide.run_decider(
+                study,
+                args.decider,
+                args.features,
+                estimate_only=args.estimate,
+                log=not args.estimate,
+                note=note,
+            )
         )
-    )
+    elif args.feature:
+        rows = panel.model_rows(study, run.build_panel(study, "tuning"))
+        c = run.Candidate(args.feature, args.transform, args.scope)
+        _print(run.test_candidate(study, rows, study.feature_set("baseline"), c, note=note))
+    elif study.cfg.get("cohort_test"):
+        if run.cohort_test_logged(study):
+            raise SystemExit("the cohort test is already in the registry: one look only")
+        res = run.CohortTest(study).run()
+        res.pop("_monthly")
+        res["registry"] = run.log_cohort_test(study, res, note)
+        _print(res)
+    else:
+        raise SystemExit("test needs --feature or --decider (or a cohort_test block in the YAML)")
 
 
 def cmd_discover(study, args) -> None:
-    p = pipeline.build_panel(study, "tuning")
-    rows = pipeline.rows(study, p)
-    _print(discovery.run(study, rows, p.features, max_tests=args.max_tests))
+    """The discovery loop; every candidate tried is a logged test."""
+    p = run.build_panel(study, "tuning")
+    rows = panel.model_rows(study, p)
+    _print(run.discover(study, rows, p.features, max_tests=args.max_tests))
 
 
-def cmd_parity(study, args) -> None:
-    res = parity.run(study, config.path(f"data/engine/{study.name}/parity.json"))
-    print(parity.table(res))
-
-
-def cmd_decide(study, args) -> None:
-    from engine import decide
-
-    decide.main_decide(study, args)
-
-
-def cmd_text_eval(study, args) -> None:
-    from engine import markets
-    from engine.text import harness, readers
-    from engine.text import questions as tq
-
+def cmd_grade_text(study, args) -> None:
+    """The text eval harness on the plug-in's eval sets, with the YAML's question set and reader."""
     plugin = markets.load(study.cfg.get("plugin", study.name))
     if not hasattr(plugin, "eval_sets"):
         raise SystemExit(f"{study.name}: the plug-in has no eval_sets()")
     t = study.cfg["text"]
     sets = plugin.eval_sets(study.market, end=study.periods.tuning[1])
-    qsets = tq.load(config.path(t["questions"]))
-    res = harness.score(
-        sets, qsets, readers.make(t.get("reader")), args.split, efficacy=True
-    )
+    qsets = tq.load(run.path(t["questions"]))
+    res = grade.score(sets, qsets, read.make_reader(t.get("reader")), args.split, efficacy=True)
     _print({k: v for k, v in res.items() if not k.startswith("_") and k != "efficacy"})
     print(res["efficacy"].to_string(index=False))
 
 
-def cmd_replay(study, args) -> None:
-    from engine import markets
+# ---------------------------------------------------------------- engine demo
+def _line(s: str = "") -> None:
+    print(s, flush=True)
 
-    plugin = markets.load(study.cfg.get("plugin", study.name))
-    try:
-        from importlib import import_module
 
-        mod = import_module(plugin.__name__ + ".replay_text")
-    except ImportError:
-        raise SystemExit(
-            f"{study.name}: no replay adapter (engine/markets/<m>/replay_text.py)"
+def run_demo(quick: bool = False) -> dict:
+    """The whole system on the demo market; state goes to a temporary directory, so it can run
+    any number of times. Returns the numbers it prints.
+
+    1. numbers vs numbers + text: the walk-forward model and the scorer
+    2. text scoring with the FREE keyword reader: answer key, probes, reaction and drift beyond a
+       history prior, the leak gate, per-question efficacy
+    3. the question-improvement loop (free proposer), confirmed once on the test split
+    4. tracking + the loop coordinator: what is mis-weighted or mis-shaped, and what got fixed
+    5. the decider layer with its feedback note (the free model-pick decider)
+    """
+    from engine.markets import demo as demo_market
+
+    tmp = Path(tempfile.mkdtemp(prefix="engine_demo_"))
+    cfg = run.read_config("demo")
+    cfg["cache_dir"] = str(tmp / "cache")
+    cfg["registry"] = {
+        "file": str(tmp / "registry.csv"),
+        "holdout_unlock_log": str(tmp / "unlocks.csv"),
+    }
+    st = run.study_from_config("demo", cfg)
+    out = {}
+
+    _line("1. Model: numbers vs numbers + text (tuning periods, rank IC and net long-short)")
+    rows = panel.model_rows(st, run.build_panel(st, "tuning"))
+    for fs in ("numbers", "numbers_text"):
+        sc, _ = run.walk_forward(st).run(rows, st.feature_set(fs), st.market.calendar)
+        ev = run.evaluate(st, sc)
+        out[fs] = ev
+        _line(
+            f"   {fs:13s} IC {ev['ic']:+.3f} (t {ev['ic_t']:.1f})   decile spread net {ev['spread']['net']:+.2%}/month (t {ev['spread']['net_t']:.1f})"
         )
-    mod.main(study, args)
 
-
-def cmd_cohort(study, args) -> None:
-    from engine import cohort_study
-
-    variant = any(
-        v is not None for v in (args.hold, args.top, args.input, args.names)
-    ) or bool(args.spread)
-    if args.log and (variant or args.coverage):
-        raise SystemExit("--log runs the pre-registered design only: no variants")
-    cs = cohort_study.Study(study)
-    if args.coverage:
-        print(cs.coverage().round(3).to_string())
-        return
-    if args.names:
-        y = [int(x) for x in (args.years or "2013-2016").split("-")]
-        print(cs.ranks_of(args.names.split(","), (y[0], y[-1])).to_string(index=False))
-        return
-    res = cs.run(
-        top=args.top,
-        hold=args.hold,
-        inputs=[args.input] if args.input else None,
-        spread=args.spread,
+    _line("\n2. Text scoring with the free keyword reader (dev split)")
+    sets = demo_market.eval_sets(st.market, end=st.periods.tuning[1])
+    qsets = tq.load(run.path(cfg["text"]["questions"]))
+    reader = read.KeywordReader()
+    res = grade.score(sets, qsets, reader, "dev", efficacy=True)
+    s = res["summary"]
+    out["text"] = s
+    _line(
+        f"   S {s['S']:.3f} = 0.30 A {s['A']:.2f} + 0.25 B {s['B']:.2f} + 0.30 C {s['C']:.2f} + 0.10 D {s['D']:.2f} + 0.05 E {s['E']:.2f}"
     )
-    m = res.pop("_monthly")
-    if args.log:
-        res["registry"] = cohort_study.log(study, res, args.note or "")
-    _print(res)
-    if args.monthly_out:
-        m.to_csv(args.monthly_out)
+    r = res["reaction"]
+    _line(
+        f"   reaction IC: prior {r['prior']['IC_react']:.3f} -> card {r['card']['IC_react']:.3f}; drift IC gain {r['gain_vs_prior']['IC_drift']:+.3f}; leak gate {'pass' if res['gates']['leak']['pass'] else 'FAIL'}"
+    )
+    eff = res["efficacy"][["question", "tag", "gold_skill", "gain_IC_react", "recommend"]]
+    for row in eff.itertuples():
+        skill = (
+            "  -  "
+            if row.gold_skill is None or row.gold_skill != row.gold_skill
+            else f"{row.gold_skill:.2f}"
+        )
+        _line(
+            f"   {row.question:16s} {row.tag:9s} gold skill {skill}  reaction gain {row.gain_IC_react:+.3f}  -> {row.recommend}"
+        )
 
+    _line("\n3. Question-improvement loop (free proposer; judged on dev, confirmed once on test)")
+    lc = text_improve.LoopConfig(
+        max_iter=3 if quick else 6, n_boot=50 if quick else 200, out_dir=tmp / "text_loop"
+    )
+    lp = text_improve.run_loop(sets, qsets, reader, text_improve.KeywordProposer(), lc)
+    for row in lp["log"].itertuples():
+        _line(
+            f"   {row.iteration}. {row.hypothesis[:60]:60s} dS {row.dS:+.3f} (low {row.lo:+.3f}) {'accepted' if row.accepted else 'rejected'}"
+        )
+    conf = text_improve.confirm(sets, qsets, lp["best_qsets"], reader, lc, "demo")
+    out["loop"] = {"accepted": lp["accepted"], "S_dev": lp["best"]["summary"]["S"], "confirm": conf}
+    _line(
+        f"   stop: {lp['stop']}; test split: S {conf['S_frozen']:.3f} -> {conf['S_best']:.3f} ({'pass' if conf['pass'] else 'fail'})"
+    )
 
-def cmd_spend(study, args) -> None:
-    from engine.spend import Ledger
+    _line(
+        "\n4. Tracking and the loop coordinator (quarterly cycles; acceptance on held-out entities)"
+    )
+    feats = st.feature_set("numbers_text")
+    meta = st.sources["releases_text"].source.feature_meta()
+    co = improve.Coordinator(
+        st, feats, meta, lambda v: rows, improve.LoopsConfig(), registry=st.registry
+    )
+    cuts = pd.date_range("2012-04-01", st.periods.tuning[1], freq="QS", tz="UTC")
+    if quick:
+        cuts = cuts[:6]
+    log = co.run(cuts)
+    first = co.reports[0]["flags"]
+    flagged = first[(first["status"] != "ok") | first["non_linear"]]
+    for row in flagged.itertuples():
+        what = "non-linear by level" if row.non_linear else row.status
+        _line(
+            f"   first report: {row.field} {what} (joint t {row.t_joint:+.1f}, one-at-a-time t {row.t_one_at_a_time:+.1f})"
+        )
+    for e in log.itertuples():
+        if e.loop != "brake":
+            _line(
+                f"   cycle {e.cycle}: {e.loop} {e.rung} {e.change[:50]} t {e.t:.2f} vs bar {e.bar:.2f} -> {'accepted' if e.accepted else 'rejected'}"
+            )
+        else:
+            _line(f"   cycle {e.cycle}: brake ({e.rung}) {e.field}: {e.trigger}")
+    out["coordinator"] = {"config": co.cur.key(), "judged": co.judged}
+    _line(f"   final model config: {co.cur.key()}")
 
-    print(Ledger.from_config(study.cfg.get("spend"), config.ROOT).report().to_string())
+    _line("\n5. Decider with the feedback note (free model-pick decider; Jev or Claude with keys)")
+    prep = decide.prepare_cards(st, "numbers_text")
+    notes = []
+    d = decide.run_batches(
+        decide.NoDecider(),
+        prep["scored"],
+        prep["rows"],
+        prep["contrib"],
+        prep["raw"],
+        prep["features"],
+        prep["labels"],
+        prep["meta"],
+        on_batch=lambda j: notes.append(j["state"]["reliability_note"]),
+    )
+    g = decide.grade_decisions(d)
+    out["decider"] = g
+    _line(
+        f"   {g['batches']} batches over {g['periods']} periods; model pick vs batch, net of costs: t {g['model_vs_batch_net_t']:.1f}"
+    )
+    _line("   last feedback note:")
+    for ln in notes[-1].splitlines():
+        _line("     " + ln)
+    reg = st.registry.summary()
+    _line(
+        f"\nRegistry (demo, temporary): {reg['judged_tests']} judged tests; next bar t >= {reg['next_bar']}. State in {tmp}"
+    )
+    out["registry"] = reg
+    return out
 
 
 def main(argv=None) -> None:
+    """Parse the command line and run one command."""
     ap = argparse.ArgumentParser(
-        prog="engine",
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        prog="engine", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument(
-        "cmd",
-        choices=[
-            "demo",
-            "fetch",
-            "build",
-            "report",
-            "test",
-            "discover",
-            "parity",
-            "decide",
-            "text-eval",
-            "spend",
-            "replay",
-            "cohort",
-        ],
-    )
-    ap.add_argument("--market")
-    ap.add_argument("--config", help="YAML path (default markets/<market>.yaml)")
-    ap.add_argument(
-        "--features", default="baseline", help="named feature set (report, decide)"
-    )
-    ap.add_argument(
-        "--legacy", action="store_true", help="the pilot's sampling quirks (report)"
-    )
-    ap.add_argument(
-        "--final", action="store_true", help="open the holdout once (report; logged)"
-    )
-    ap.add_argument("--feature")
-    ap.add_argument("--transform", default="level")
-    ap.add_argument("--scope", default="universal")
-    ap.add_argument("--note")
-    ap.add_argument("--max-tests", type=int)
-    ap.add_argument(
-        "--decider", help="decide: none | jev | claude (default: the YAML's)"
-    )
-    ap.add_argument("--years", help="decide: decision years, e.g. 2013-2019")
-    ap.add_argument("--estimate", action="store_true", help="decide: cost only")
-    ap.add_argument(
-        "--log", action="store_true", help="decide: log the result as ONE test"
-    )
-    ap.add_argument(
-        "--no-feedback", action="store_true", help="decide: without the note"
-    )
-    ap.add_argument("--step", help="decide: spend-ledger step")
-    ap.add_argument("--split", default="dev", help="text-eval: dev | test")
+    ap.add_argument("cmd", choices=COMMANDS)
+    ap.add_argument("--market", help="a YAML in markets/ (demo, csv_example, us_smallcap, ...)")
+    ap.add_argument("--config", help="a YAML path instead of markets/<market>.yaml")
+    ap.add_argument("--fetch", action="store_true", help="build: fill the caches first (network)")
+    ap.add_argument("--features", default="baseline", help="report, test --decider: feature set")
+    ap.add_argument("--final", action="store_true", help="report: open the holdout once (logged)")
+    ap.add_argument("--feature", help="test: the candidate feature")
+    ap.add_argument("--transform", default="level", help="test: level | chg<k> | pct<k> | log")
+    ap.add_argument("--scope", default="universal", help="test: universal or one group")
+    ap.add_argument("--decider", help="report, test: none | jev | claude")
+    ap.add_argument("--estimate", action="store_true", help="paid steps: print the cost only")
+    ap.add_argument("--note", help="test: a note stored with the registry row")
+    ap.add_argument("--max-tests", type=int, help="discover: at most this many tests")
+    ap.add_argument("--split", default="dev", help="grade-text: dev | test")
     ap.add_argument("--quick", action="store_true", help="demo: fewer iterations")
-    ap.add_argument("--refit", help="replay: M (monthly) | year")
-    ap.add_argument("--recency", help="replay: auto | none")
-    ap.add_argument("--coverage", action="store_true", help="cohort: inputs only")
-    ap.add_argument("--hold", type=int, help="cohort: quarters held (variant)")
-    ap.add_argument("--top", type=float, help="cohort: fraction or count (variant)")
-    ap.add_argument("--input", help="cohort: one input instead of the composite")
-    ap.add_argument("--spread", action="store_true", help="cohort: top minus bottom")
-    ap.add_argument("--names", help="cohort: codes whose ranks to show, e.g. NVDA,MU")
-    ap.add_argument("--monthly-out", help="cohort: write the monthly series here")
-    ap.add_argument(
-        "--min-funds-left",
-        type=float,
-        help="replay: stop if TypeSafe funds would fall below",
-    )
     args = ap.parse_args(argv)
-    os.chdir(config.ROOT)  # plug-ins read paths relative to the repo root
+    os.chdir(run.ROOT)  # plug-ins read paths relative to the repo root
     if args.cmd == "demo":
-        from engine import demo
-
-        demo.run(quick=args.quick)
+        run_demo(quick=args.quick)
         return
     if not args.market:
         ap.error("--market is required")
-    if args.market in ("us_smallcap", "us_largecap"):
-        from engine.markets.us_smallcap.env import load_env
-
-        load_env()
-    study = config.load(args.market, args.config)
+    load_env()
+    study = run.load_study(args.market, args.config)
     {
-        "fetch": cmd_fetch,
         "build": cmd_build,
         "report": cmd_report,
         "test": cmd_test,
         "discover": cmd_discover,
-        "parity": cmd_parity,
-        "decide": cmd_decide,
-        "text-eval": cmd_text_eval,
-        "spend": cmd_spend,
-        "replay": cmd_replay,
-        "cohort": cmd_cohort,
+        "grade-text": cmd_grade_text,
     }[args.cmd](study, args)
 
 

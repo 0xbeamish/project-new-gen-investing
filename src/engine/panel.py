@@ -1,13 +1,12 @@
-"""Panel builder: decision schedule x universe -> one row per (decision time, entity).
+"""Panel builder: decision schedule x universe -> one row per (decision time, entity), and the model
+rows made from it (labelled rows, winsorized label, rank target, round-trip costs).
 
 For each row:
   features   the LATEST observation of each feature with available_at < decision_time, blanked if
              older than the feature's max_age_days (calendar days, local dates, from the day it
              became usable to the decision date)
   label      the market's forward return from the first bar closing after the decision
-  provenance the available_at behind every filled cell, so engine.pit can re-check the panel
-
-Generalizes jev.smallpanel (which hand-joined each source with its own merge_asof rule).
+  provenance the available_at behind every filled cell, so engine.data.check_panel can re-check it
 """
 
 from __future__ import annotations
@@ -21,12 +20,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from engine import observations as obsmod
+from engine import data
 
 
 @dataclass
 class SourceSpec:
-    source: object  # an engine.observations.Source
+    source: object  # an engine.data.Source
     features: list[str] | None = None  # None = every feature the source emits
     max_age_days: int | None = None  # None = never stale
     lookback_days: int = 3650  # how far before the first decision to read observations
@@ -44,12 +43,11 @@ class PanelSpec:
 @dataclass
 class Panel:
     frame: pd.DataFrame  # entity_id, decision_time, group, attrs..., labels, features
-    available_at: dict[
-        str, pd.Series
-    ]  # feature -> available_at per frame row (NaT = empty)
+    available_at: dict[str, pd.Series]  # feature -> available_at per frame row (NaT = empty)
     features: list[str]
 
     def provenance(self) -> pd.DataFrame:
+        """One row per (row, feature): the available_at behind the cell (what the PIT check reads)."""
         parts = [
             pd.DataFrame(
                 {
@@ -62,27 +60,17 @@ class Panel:
             for f, at in self.available_at.items()
         ]
         if not parts:
-            return pd.DataFrame(
-                columns=["entity_id", "decision_time", "feature", "available_at"]
-            )
+            return pd.DataFrame(columns=["entity_id", "decision_time", "feature", "available_at"])
         out = pd.concat(parts, ignore_index=True)
         for c in ("decision_time", "available_at"):
             out[c] = pd.to_datetime(out[c], utc=True)
         return out
 
-    def subset(self, mask) -> Panel:
-        mask = np.asarray(mask, dtype=bool)
-        return Panel(
-            self.frame[mask].reset_index(drop=True),
-            {f: s[mask].reset_index(drop=True) for f, s in self.available_at.items()},
-            list(self.features),
-        )
-
 
 def as_utc(x) -> pd.Timestamp:
     """A bare date means midnight UTC; a tz-aware stamp is converted."""
     t = pd.Timestamp(x)
-    return obsmod.utc(t if t.tzinfo else t.tz_localize("UTC"))
+    return data.utc(t if t.tzinfo else t.tz_localize("UTC"))
 
 
 def _log(msg: str) -> None:
@@ -106,6 +94,7 @@ def _fingerprint(*parts) -> str:
 
 
 def universe_rows(market, times: pd.DatetimeIndex) -> pd.DataFrame:
+    """The market's universe at every decision time, stacked (group defaults to "all")."""
     frames = []
     for t in times:
         u = market.universe(t)
@@ -120,10 +109,7 @@ def universe_rows(market, times: pd.DatetimeIndex) -> pd.DataFrame:
 
 
 def attach(
-    rows: pd.DataFrame,
-    obs: pd.DataFrame,
-    calendar,
-    max_age_days: int | None,
+    rows: pd.DataFrame, obs: pd.DataFrame, calendar, max_age_days: int | None
 ) -> tuple[pd.Series, pd.Series]:
     """Latest obs.value with available_at < decision_time per row; returns (value, available_at)."""
     left = pd.DataFrame(
@@ -133,9 +119,7 @@ def attach(
             "decision_time": rows["decision_time"].to_numpy(),
         }
     ).sort_values("decision_time", kind="stable")
-    right = obs[["entity_id", "available_at", "value"]].sort_values(
-        "available_at", kind="stable"
-    )
+    right = obs[["entity_id", "available_at", "value"]].sort_values("available_at", kind="stable")
     m = pd.merge_asof(
         left,
         right,
@@ -146,9 +130,7 @@ def attach(
         allow_exact_matches=False,  # strictly before the decision
     ).sort_values("_pos")
     value = pd.Series(m["value"].to_numpy(dtype=float), index=rows.index)
-    at = pd.Series(
-        pd.to_datetime(m["available_at"].to_numpy(), utc=True), index=rows.index
-    )
+    at = pd.Series(pd.to_datetime(m["available_at"].to_numpy(), utc=True), index=rows.index)
     if max_age_days is not None:
         age = (
             calendar.local_date(m["decision_time"]).to_numpy()
@@ -167,8 +149,8 @@ def build(
     times: pd.DatetimeIndex | None = None,
     with_labels: bool = True,
 ) -> Panel:
-    """with_labels=False: features only, no forward return is computed (e.g. a coverage check
-    before a pre-registration, or a study that prices its own holdings)."""
+    """Build the panel. with_labels=False: features only, no forward return is computed (a coverage
+    check before a pre-registration, or a study that prices its own holdings)."""
     if times is None:
         times = market.calendar.decision_times(spec.start, spec.end, spec.schedule)
     times = times[(times >= as_utc(spec.start)) & (times < as_utc(spec.end))]
@@ -180,9 +162,7 @@ def build(
         rows = rows.merge(labels, on=["entity_id", "decision_time"], how="left")
     else:
         nat = pd.Series(pd.NaT, index=rows.index, dtype="datetime64[ns, UTC]")
-        rows = rows.assign(
-            entry_time=nat, label_end=nat, fwd_return=np.nan, delisted=False
-        )
+        rows = rows.assign(entry_time=nat, label_end=nat, fwd_return=np.nan, delisted=False)
     feats: dict[str, pd.Series] = {}
     ats: dict[str, pd.Series] = {}
     # generated markets change their data with their settings: key the cache on them too
@@ -199,7 +179,7 @@ def build(
             obs = _cached(
                 cache_dir,
                 f"obs_{src.name}_{key}",
-                lambda src=src: obsmod.validate(
+                lambda src=src: data.validate_observations(
                     src.observations_at(rows[["entity_id", "decision_time"]]), src.name
                 ),
             )
@@ -215,7 +195,7 @@ def build(
             obs = _cached(
                 cache_dir,
                 f"obs_{src.name}_{key}",
-                lambda src=src, start=start: obsmod.validate(
+                lambda src=src, start=start: data.validate_observations(
                     src.observations(start, times.max()), src.name
                 ),
             )
@@ -227,11 +207,46 @@ def build(
             o = by_feature.get(f)
             if o is None:
                 feats[f] = pd.Series(np.nan, index=rows.index)
-                ats[f] = pd.Series(
-                    pd.NaT, index=rows.index, dtype="datetime64[ns, UTC]"
-                )
+                ats[f] = pd.Series(pd.NaT, index=rows.index, dtype="datetime64[ns, UTC]")
                 continue
             feats[f], ats[f] = attach(rows, o, market.calendar, s.max_age_days)
         _log(f"  {src.name}: {len(obs):,} observations -> {len(wanted)} features")
     frame = pd.concat([rows, pd.DataFrame(feats, index=rows.index)], axis=1)
     return Panel(frame, ats, list(feats))
+
+
+# ---------------------------------------------------------------- model rows
+def usable_rows(frame: pd.DataFrame) -> pd.DataFrame:
+    """Rows with a label."""
+    return frame.dropna(subset=["fwd_return"]).reset_index(drop=True)
+
+
+def winsorize(
+    frame: pd.DataFrame, col: str, q: tuple[float, float], by: str = "decision_time"
+) -> pd.DataFrame:
+    """Clip `col` at each decision time's quantiles, so one bad print (a shell going $1 -> $141 on no
+    volume) can't dominate an average."""
+    g = frame.groupby(by)[col]
+    lo, hi = g.transform("quantile", q[0]), g.transform("quantile", q[1])
+    return frame.assign(**{col: frame[col].clip(lo, hi)})
+
+
+def add_rank_target(
+    frame: pd.DataFrame, within: str | None = "group", col: str = "fwd_return"
+) -> pd.DataFrame:
+    """fwd_rank: percentile of the forward return within (decision time, group), centred at 0.
+    within=None ranks across the whole decision time."""
+    keys = ["decision_time"] + ([within] if within else [])
+    return frame.assign(fwd_rank=frame.groupby(keys)[col].rank(pct=True) - 0.5)
+
+
+def model_rows(study, p: Panel) -> pd.DataFrame:
+    """Labelled rows ready for a model: winsorized label, fwd_rank target, round-trip costs."""
+    lab = study.cfg["labels"]
+    f = usable_rows(p.frame)
+    if lab.get("winsorize"):
+        f = winsorize(f, "fwd_return", tuple(lab["winsorize"]))
+    within = study.cfg["model"].get("target", {}).get("within", "group")
+    f = add_rank_target(f, within)
+    f["rt_cost"] = study.market.cost_bps(f) / 1e4
+    return f
