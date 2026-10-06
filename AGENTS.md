@@ -7,16 +7,17 @@ what has already been tried (and failed).
 
 ## If the user says "try it out"
 
-Run these in order (about 10 minutes, no keys, no downloads beyond Python packages), compare with
-the expected results, then tell the user what the system does and what each step showed.
+Run these in order (about 6 minutes after install: demo ~2.5, tests ~3; a first install downloads
+packages and takes longer; no keys), compare with the expected results, then tell the user what the
+system does and what each step showed.
 
 | step | command | expected on a fresh clone |
 |---|---|---|
 | 1. install | `uv sync` | finishes without errors |
-| 2. demo | `uv run engine demo` (~2 min) | six numbered sections. In section 6A, `x_value`'s weight climbs from about 0 to about 29 (x100) against a true 30, and the inner loop re-encodes `txt_demand_level` (t 2.48). In 6B (the trap), `x_value` falls from about 50 to about 5 while "inner-loop changes to the demand question: none" |
-| 3. a real signal | `uv run engine test --market csv_example --feature flow` | `t_tune` about 11.2 vs `bar_tune` 1.96, `check_used: true`, `kept: true` |
+| 2. demo | `uv run engine demo` (~2.5 min) | six numbered sections. In section 6A, `x_value`'s weight climbs from about 0 to about 29 (x100) against a true 30, and the inner loop re-encodes `txt_demand_level` (t 2.48). In 6B (the trap), `x_value` falls from about 50 to about 5 while "inner-loop changes to the demand question: none" |
+| 3. a real signal | `uv run engine test --market csv_example --feature flow` | `t_tune` about 11.2 vs `bar_tune` 1.96, `check_used: true`, `kept: true`. This opens csv_example's check period by itself, which is fine on the toy markets (demo, csv_example). On a research market, ask the user before any `test` (see the rules) |
 | 4. noise | `uv run engine test --market csv_example --feature social` | `t_tune` about 1.0 vs `bar_tune` about 2.24 (the bar rose because step 3 was logged), `kept: false` |
-| 5. the feedback loop | `uv run engine loop --market csv_example` | a weights table where `flow` rises from about 6 to 16–20 and `social` stays near 0; "Changes judged: 0, accepted: 0"; ON vs FROZEN t near 0; three files in `results/csv_example/` |
+| 5. the feedback loop | `uv run engine loop --market csv_example` | "91 periods ... (52 with both ON and FROZEN returns)". In the weights table (x100) the planted inputs carry the largest weights by the end: the two planted text signals, `doc_exploit_p` about −21 (posts reporting an exploit) and `doc_upgrade_p` about +14 (posts saying an upgrade shipped), and the planted number `flow`, rising from about 6 to 16–20; `social` (noise) stays near 0. "Changes judged end to end: 0, accepted: 0; brakes: 0" (a brake would be the coordinator freezing a field or undoing a change; its line says why), and "question splits proposed: 3 ... 0 helped enough on the diagnosis entities to be judged". ON vs FROZEN t near 0. Three files in `results/csv_example/` |
 | 6. tests | `uv run pytest -q` (~3 min) | all pass |
 
 Steps 3–4 write to the toy registry in `.engine_cache/csv_example/`, so a second run shows a higher
@@ -31,7 +32,7 @@ Needs [uv](https://docs.astral.sh/uv/): `curl -LsSf https://astral.sh/uv/install
 ```bash
 uv sync                    # Python 3.12, no keys needed
 uv sync --extra llm        # only for paid readers / deciders (Jev, Claude)
-uv run engine demo         # ~2 min; proves the install and shows the feedback loop
+uv run engine demo         # ~2.5 min; proves the install and shows the feedback loop
 uv run pytest -q           # ~3 min; must stay green
 uv run ruff check src tests examples && uv run ruff format src tests examples
 ```
@@ -77,8 +78,11 @@ report, test) is paid: `--estimate` prints the cost only.
 - **No future data.** Every input's `available_at` is strictly before the decision; when unsure
   when something became public, pick the later time. Never bypass `data.check_panel`.
 - **Never open the check period or the holdout without the user.** Do not call
-  `registry.open_check()` or `report --final` on your own; `test` opens the check period only
-  through the registry when tuning clears the bar.
+  `registry.open_check()` or `report --final` on your own. `engine test` (and `discover`, which
+  runs tests) opens the check period by itself when a candidate clears the tuning bar, and each
+  pass uses one of the market's rationed check-period looks. On the toy markets (demo,
+  csv_example) that is fine. On any research market (us_smallcap, us_largecap, or the user's own),
+  ask the user before running `test`, `discover` or `loop --log`.
 - **Log every judged test.** Use `engine test` / `discover` / `loop --log` (or `run.test_candidate`);
   never run a judged comparison off the books, and never delete or edit registry rows. A logged
   loop needs its `loop:` block (with `name`) committed before the run, and gets one look.

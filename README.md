@@ -99,9 +99,14 @@ Needs [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install
 
 ```bash
 uv sync
-uv run engine demo        # ~2 min: the whole system on a synthetic market, ending with the loop
-uv run pytest -q
+uv run engine demo        # ~2.5 min: the whole system on a synthetic market, ending with the loop
+uv run pytest -q          # ~3 min
 ```
+
+What correct looks like: in the demo's last section, `x_value`'s weight climbs from about 0 to
+about 29 (x100) against a true value of 30, and in the trap case it falls from about 50 to about 5
+while the demand question is left alone; every test passes. The full step-by-step table, with the
+expected number at each step, is "try it out" in [AGENTS.md](AGENTS.md#if-the-user-says-try-it-out).
 
 ## Try your own data in 3 steps
 
@@ -175,5 +180,6 @@ The shipped example (30 tokens trading 24/7, planted signals) runs the same way:
   signal it must find and on noise it must not.
 
 Optional paid readers and deciders: `uv sync --extra llm` and keys in `.env` (copy `.env.example`).
-The US stock plug-in fetches its own data with your keys (`engine build --fetch`). No license file
-is included yet.
+The US stock plug-in fetches its own data with your keys (`engine build --fetch`).
+
+No license: all rights reserved. Ask the owner before reusing the code.
