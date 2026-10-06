@@ -1,11 +1,19 @@
 # project-new-gen-investing
 
-A research engine for one question: **does this signal, known before the decision, rank the next
-period's winners above its losers, after costs, more often than luck allows?** It turns any data,
-numbers or text, into point-in-time inputs, judges every candidate with the same walk-forward model
-and scorer, and logs every attempt in a registry whose bar rises with each try. It was built on a
-year of US stock research, where nothing cleared the bar ([docs/FINDINGS.md](docs/FINDINGS.md)), and
-is meant to be pointed at new data.
+**An agentic investing system that learns how much a decision agent should trust each piece of
+information, and keeps re-learning as results come in.**
+
+You give it inputs: numbers (financials, prices, insider trades) and text (filings, news, posts, or
+your own documents). An AI reader turns each document into structured answers, each backed by a
+quote from the text. A model then weights every input by how well it has predicted returns, using
+only data that existed at the time. A decision agent (Jev, Claude, or the model's own pick) sees
+those weights on a card for each candidate and makes the call. When returns come in, the weights are
+re-learned, and text questions that keep misleading the model are rewritten. Every test is logged
+against a bar that rises with each attempt, so the system can't fool itself.
+
+On public US stock data from 2011–2019 the loop works as designed, but no signal survived trading
+costs ([docs/FINDINGS.md](docs/FINDINGS.md)). It is built to be pointed at better data, especially
+proprietary text. Run `uv run engine demo` to watch it learn on a synthetic market, no keys needed.
 
 ## The feedback loop
 
