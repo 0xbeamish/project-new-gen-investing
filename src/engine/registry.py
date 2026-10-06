@@ -3,8 +3,9 @@
 Every judged test is a row in the market's registry CSV, kept or not. Trying more ideas raises the
 bar for the next one (Bonferroni: a two-sided test at alpha / n), so the best of many lucky tries
 doesn't pass. Other registries (earlier research, other markets) are INHERITED read-only, so the
-count continues instead of restarting at zero. Writes take a file lock and replace the file
-atomically, so two runs can't overwrite each other's rows.
+count continues instead of restarting at zero. The changes a feedback loop judges inside a run count
+too: one `loop_internal` row per run, whose `count` says how many it judged. Writes take a file lock
+and replace the file atomically, so two runs can't overwrite each other's rows.
 
 Periods, declared per market:
   tuning    everything is designed and judged here
@@ -31,7 +32,7 @@ COLUMNS = [
     "test_id",
     "market",
     "timestamp",
-    "kind",  # test (judged when it has a t) | parity, decision ... (never judged)
+    "kind",  # test (judged when it has a t) | loop_internal (judged, `count` of them) | other: not
     "name",
     "features",
     "scope",
@@ -46,6 +47,9 @@ COLUMNS = [
     "kept",
     "note",
     "origin",  # engine | the inherited log's name
+    "count",  # judged tests the row stands for (loop_internal); blank = 1
+    "mde_50",  # smallest true effect the test detects half the time, in the metric's units
+    "mde_80",  # ... 80% of the time (both from noise measured before the result)
 ]
 
 
@@ -167,12 +171,16 @@ class Registry:
 
     @staticmethod
     def judged(rows: pd.DataFrame) -> pd.Series:
-        """A row counts toward the bar if it is a test with a t-statistic."""
-        return (rows["kind"] == "test") & pd.to_numeric(rows["t_tune"], errors="coerce").notna()
+        """A row counts toward the bar if it is a test with a t-statistic, or a loop's internal
+        judgments."""
+        test = (rows["kind"] == "test") & pd.to_numeric(rows["t_tune"], errors="coerce").notna()
+        return test | (rows["kind"] == "loop_internal")
 
     def n_judged(self) -> int:
-        """Judged tests so far, inherited included."""
-        return int(self.judged(self.rows()).sum())
+        """Judged tests so far, inherited included (a loop_internal row counts `count` times)."""
+        rows = self.rows()
+        count = pd.to_numeric(rows["count"], errors="coerce").fillna(1)
+        return int(count[self.judged(rows)].sum())
 
     def check_uses(self) -> int:
         """Check-period looks so far, inherited included."""
@@ -205,12 +213,21 @@ class Registry:
                 "timestamp": row.get("timestamp")
                 or pd.Timestamp.now(tz="UTC").strftime("%Y-%m-%dT%H:%MZ"),
             }
-            out = pd.concat([own, pd.DataFrame([row])], ignore_index=True)
+            out = pd.concat([own.reindex(columns=COLUMNS), pd.DataFrame([row])], ignore_index=True)
+            out["count"] = pd.to_numeric(out["count"], errors="coerce").astype("Int64")
             fd, tmp = tempfile.mkstemp(dir=self.path.parent, suffix=".csv.tmp")
             with os.fdopen(fd, "w") as f:
                 out[COLUMNS].to_csv(f, index=False)
             os.replace(tmp, self.path)
         return row
+
+    def record_internal(self, count: int, note: str) -> dict | None:
+        """Count the changes a feedback loop judged inside one run (they raise the bar like any
+        test); nothing to record when it judged none."""
+        if not count:
+            return None
+        row = {"kind": "loop_internal", "name": "loop: changes judged inside", "note": note}
+        return self.record(row | {"count": int(count)})
 
     def open_check(self) -> CheckGrant:
         """Grant one check-period look. The caller must record it (check_used=True)."""

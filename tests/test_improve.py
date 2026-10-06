@@ -297,6 +297,7 @@ def test_the_loop_learns_a_new_weight_and_unlearns_a_stale_one(regime_loop):
     acc = ch[ch["accepted"] & (ch["loop"] == "inner")]
     assert (acc["rung"] == "encoding").any()  # the U-shaped demand field was re-encoded
     assert res["result"]["diff_net_t"] > 2  # loop ON beats FROZEN, net of costs
+    assert res["inner_judged"] >= 1 and res["registry_internal"]["count"] == res["inner_judged"]
 
 
 def test_loop_files_have_one_row_per_period_and_input(regime_loop):
@@ -349,10 +350,13 @@ def test_loop_log_writes_exactly_one_registry_row_and_only_once(tmp_path):
     path.write_text(yaml.safe_dump(cfg))
     cli.main(args)
     reg = run.study_from_config("demo", cfg).registry
-    assert len(reg.own()) == 1 and reg.own()["name"].iloc[0] == cfg["loop"]["name"]
+    tests = reg.own()[reg.own()["kind"] == "test"]
+    assert len(tests) == 1 and tests["name"].iloc[0] == cfg["loop"]["name"]  # ONE test
+    internal = reg.own()[reg.own()["kind"] == "loop_internal"]
+    assert len(internal) <= 1  # plus, if it judged any, one row counting its internal judgments
     with pytest.raises(SystemExit):  # one look only
         cli.main(args)
-    assert len(reg.own()) == 1
+    assert len(reg.own()) == len(tests) + len(internal)
 
 
 def test_the_question_rung_splits_a_question_and_reads_it_point_in_time(small_text):

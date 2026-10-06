@@ -207,7 +207,8 @@ def replay(
     the inner loop may accept one change, and that period's decisions use the configuration in
     force. Primary statistic, fixed in advance: the V1 portfolio (buy the group's top 10%, hold
     until out of its top 30%) net of costs, ON minus FROZEN, paired t over periods. rows_for(version)
-    -> model rows. Nothing inside writes to the registry; the caller logs the result as ONE test."""
+    -> model rows. The changes judged inside are recorded as one loop_internal registry row (they
+    raise the bar for later tests); the caller logs the ON vs FROZEN result itself, as ONE test."""
     rows = rows_for("v1")
     times = replay_periods(study, rows, cfg.years)
     fr = frozen_scores(study, rows, features)
@@ -245,6 +246,12 @@ def replay(
     )
     res["inner_judged"] = co.judged
     res["final_config"] = co.cur.key()
+    acc = sum(1 for e in co.events if e.accepted and e.loop != "brake")
+    res["registry_internal"] = study.registry.record_internal(
+        co.judged,
+        f"{co.judged} changes judged inside a loop over {cfg.years[0]}-{cfg.years[1]} "
+        f"({acc} accepted); final {co.cur.key()}",
+    )  # every judged change counts toward the shared bar, descriptive run or not
     if out_dir:
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "replay.json").write_text(json.dumps(res, indent=1, default=str))

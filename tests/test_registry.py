@@ -85,6 +85,25 @@ def test_committed_registries_share_one_count():
     assert count(small) == count(large)
 
 
+def test_a_loops_internal_judgments_raise_the_next_bar(tmp_path):
+    r = Registry(tmp_path / "reg.csv", "m")
+    r.record({"kind": "test", "name": "a", "t_tune": 1.0})
+    assert r.record_internal(0, "nothing judged") is None and r.n_judged() == 1
+    r.record_internal(5, "5 changes judged inside one loop")
+    assert r.n_judged() == 6 and r.next_bar() == pytest.approx(required_t(7))
+    later = Registry(tmp_path / "other.csv", "m2", [tmp_path / "reg.csv"])
+    assert later.n_judged() == 6  # an inheriting market sees them too
+
+
+def test_the_shipped_registries_count_the_past_replays_internal_judgments():
+    """22 + 33 + 34 changes judged inside the three us_smallcap replays (docs/FINDINGS.md)."""
+    reg = run.read_config("us_smallcap")["registry"]
+    r = Registry(run.path(reg["file"]), "m", [run.path(p) for p in reg["inherit"]])
+    internal = r.own()[r.own()["kind"] == "loop_internal"]
+    assert sorted(internal["count"].astype(int)) == [22, 33, 34]
+    assert r.n_judged() == 84 + 89
+
+
 def _record_many(path, worker, n):
     reg = Registry(path, "m")
     for i in range(n):
