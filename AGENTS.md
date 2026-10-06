@@ -1,0 +1,78 @@
+# AGENTS.md
+
+For an AI agent working in this repo. It is a research engine that asks whether a signal, known
+before a decision, ranks the next period's winners above its losers after costs, more often than
+luck allows. Read README.md first, docs/HOW_IT_WORKS.md for the mechanics, docs/FINDINGS.md for
+what has already been tried (and failed).
+
+## Setup
+
+```bash
+uv sync                    # Python 3.12, no keys needed
+uv sync --extra llm        # only for paid readers / deciders (Jev, Claude)
+uv run engine demo         # ~90 s; proves the install
+uv run pytest -q           # ~2 min; must stay green
+uv run ruff check src tests examples && uv run ruff format src tests examples
+```
+
+Keys, only if the user gives them: copy `.env.example` to `.env` (git-ignored). `SEC_USER_AGENT` and
+`EODHD_API_KEY` for the US stock plug-in, `TYPESAFE_API_KEY` / `ANTHROPIC_API_KEY` for paid readers.
+
+## The commands (`uv run engine <cmd> --market <name>`)
+
+| command | what it does | what it prints |
+|---|---|---|
+| `demo` | everything on the synthetic demo market, no `--market` | five sections: model IC, text scores, question loop, loop coordinator, decider note |
+| `build` | panel for tuning periods + point-in-time check (`--fetch` downloads first) | JSON: rows, decision times, entities, labelled rows, coverage per feature |
+| `report` | a feature set's model on tuning periods (`--features`, default `baseline`); descriptive, never logged | JSON: rank IC and t, decile spread and portfolios gross / net, average weights, registry state, holdout looks |
+| `test` | ONE judged test, logged whatever the result: `--feature` (+ `--transform`, `--scope`), or `--decider`, or the YAML's `cohort_test` | JSON: the registry row (t_tune vs bar_tune, check used, kept) |
+| `discover` | candidates from the YAML (or every feature x transform), each a logged test, until one is kept | JSON list of registry rows |
+| `grade-text` | the text eval harness on the market's eval sets (`--split dev`) | JSON summary (S, A-E, gates) and a keep / drop table per question |
+
+`report --decider jev|claude` and `test --decider ...` are paid: `--estimate` prints the cost only.
+`report --final` opens the holdout: never run it yourself (see the rules).
+
+## Adding data
+
+1. **CSV first, no code.** `prices.csv` (`entity, date, close`, optional `volume`, `group`),
+   `signals.csv` (`entity, available_at, feature, value`), `documents.csv`
+   (`entity, available_at, doc_type, text`) + a question YAML. Copy `markets/csv_example.yaml`,
+   point `csv:` at the files, set calendar / schedule / horizon / periods, then `build`, `report`,
+   `test`. `examples/csv/` is a working 24/7 example.
+2. **A plug-in** when the data needs fetching or computing: a module under `src/engine/markets/`
+   with `build(cfg) -> (market, {source: factory})`; sources implement `fetch` and `observations`
+   (or `observations_at`). See docs/HOW_IT_WORKS.md, "Add your data"; `markets/demo.py` and
+   `markets/csv.py` are the small examples, `markets/us_stocks/` the full one.
+3. Every new source gets a test like `tests/test_panel.py`: a value stamped exactly at the decision
+   must not appear.
+
+## Rules you must never break
+
+- **No future data.** Every input's `available_at` is strictly before the decision; when unsure
+  when something became public, pick the later time. Never bypass `data.check_panel`.
+- **Never open the check period or the holdout without the user.** Do not call
+  `registry.open_check()` or `report --final` on your own; `test` opens the check period only
+  through the registry when tuning clears the bar.
+- **Log every judged test.** Use `engine test` / `discover` (or `run.test_candidate`); never run a
+  judged comparison off the books, and never delete or edit registry rows.
+- **Never tune toward a result.** Decide the periods, the candidate and the bar before looking;
+  don't re-run with tweaked settings until something passes. `report` is for description only.
+- **Spend caps before paid calls.** Every paid call goes through `engine.spend.Ledger` with a cap;
+  print the estimate (`--estimate`) and get the user's yes before spending.
+- **Never commit keys or vendor data.** `.env`, `.cache/`, `.engine_cache/`, `data/costs.csv` and
+  universe lists are git-ignored; keep it that way. Only aggregate statistics go in `docs/` and the
+  registries.
+
+## Where things live
+
+| what | where |
+|---|---|
+| engine code | `src/engine/` (one module per job; the table in README.md) |
+| text scoring | `src/engine/text/` |
+| market plug-ins | `src/engine/markets/` |
+| market configs, question sets | `markets/*.yaml`, `markets/questions/` |
+| example data | `examples/csv/` |
+| registries (judged tests) | `data/registry_aggregate.csv`, `data/engine/<market>/registry.csv`; toy markets in `.engine_cache/<market>/` |
+| caches (safe to delete) | `.engine_cache/` (panels, answers), `.cache/` (US stock downloads) |
+| tests | `tests/` mirrors `src/engine/`; `tests/text/` mirrors `src/engine/text/` |
+| results so far | `docs/FINDINGS.md` |

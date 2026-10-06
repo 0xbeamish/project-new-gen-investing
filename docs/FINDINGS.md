@@ -1,10 +1,10 @@
 # Findings
 
 What a year of honest tests found, before and after the engine existed. Aggregate numbers only:
-no vendor values, no company-level results. Every judged test is a row in the registry
-(`data/engine/us_smallcap/registry.csv` plus the inherited pilot logs; `data/registry_aggregate.csv`
-in the shareable export). Tuning years 2012/2013-2019 unless stated; check years 2020-2023 were
-looked at only where logged; 2024+ is a holdout no test has opened.
+no vendor values, no company-level results. Every judged test is a registry row:
+`data/registry_aggregate.csv` for the research before the engine (the "pilot"),
+`data/engine/<market>/registry.csv` since. Tuning years 2012/2013-2019 unless stated; check years
+2020-2023 were opened only where logged; no test has opened the 2024+ holdout.
 
 **The short version.** Nothing has cleared the bar. A small/mid-cap model over numbers plus
 LLM-read earnings releases ranks next month's winners above its losers (rank IC 0.034, t 4.7 on
@@ -109,8 +109,9 @@ Where there is an edge, it is about the size of the cost of trading it.
   later drift (IC 0.032 +- 0.020).
 
 ### The engine
-- **Parity**: the engine reproduces the pilot's recorded numbers to floating point with the
-  pilot's settings, and moves them slightly with its stricter defaults (rank IC 0.034 -> 0.037 on
+- **Parity**: the engine reproduced the pilot's recorded numbers to floating point with the
+  pilot's settings (the reproduction needs the pilot's data and stays with it), and moves them
+  slightly with its stricter defaults (rank IC 0.034 -> 0.037 on
   the same months; 0.029 over all 84 months). The text eval reproduces S 0.4457 and the reaction
   rows exactly.
 - **Jev decider re-test through the engine, feedback note on** (pre-registered; one logged test,
@@ -158,7 +159,7 @@ Where there is an edge, it is about the size of the cost of trading it.
   - Descriptive, not logged: option 1's outer loop vs option 2's, rank IC +0.015 (t 2.45), V1 net
     +0.076%/month (t 0.78). Recency weighting hurt on this data; more frequent refits without it
     helped IC a little, not net returns.
-- **Loops on synthetic markets** (docs/TEXT.md): tracking flags a planted over-weighted field and a
+- **Loops on synthetic markets** (docs/HOW_IT_WORKS.md): tracking flags a planted over-weighted field and a
   planted U-shaped field; the ladder fixes both; when the true error is a mis-weighted numeric input
   correlated with a text field, the coordinator leaves the text question alone and the outer refit
   fixes it.
@@ -166,9 +167,9 @@ Where there is an edge, it is about the size of the cost of trading it.
 ### Large caps, multi-year holds (us_largecap)
 The "catch the business while it inflects, hold for years" bet that retail investors made on a
 handful of famous names. Earlier tests ranked small/mid caps monthly and excluded the 500 largest.
-- **Market.** us_largecap reuses the us_smallcap plug-in (prices, SEC filings, measured spreads,
-  the delisting rule) through configuration only. It reads nothing after 2019-12-31: not prices,
-  not filings, not 8-Ks.
+- **Market.** The same us_stocks plug-in as us_smallcap (prices, SEC filings, measured spreads,
+  the delisting rule), configured differently. It reads nothing after 2019-12-31: not prices, not
+  filings, not 8-Ks.
 - **Universe.** The 500 largest US filers each quarter, point-in-time, delisted companies
   included: 890 companies over 33 formations, 496-500 a quarter. 156 of them stopped trading
   inside the window; their delisting returns are counted.
