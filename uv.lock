@@ -659,7 +659,7 @@ wheels = [
 ]
 
 [[package]]
-name = "project-new-gen-fund"
+name = "project-new-gen-investing"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

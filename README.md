@@ -1,4 +1,4 @@
-# project-new-gen-fund
+# project-new-gen-investing
 
 A research engine for one question: **does this signal, known before the decision, rank the next
 period's winners above its losers, after costs, more often than luck allows?** It turns any data,
