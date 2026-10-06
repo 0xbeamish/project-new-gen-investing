@@ -1,15 +1,17 @@
-"""Market plug-ins: the label convention, the demo market, and the US stock plug-in's helpers
-offline (no cache, no network)."""
+"""Market plug-ins: the label convention, the demo market, the CSV market, and the US stock
+plug-in's helpers offline (no cache, no network)."""
 
 import gzip
 import json
+import shutil
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from engine import data, run
+from engine import data, panel, run
 from engine.market import forward_returns
+from engine.markets import csv as csv_market
 from engine.markets import us_stocks
 from engine.markets.us_stocks import filings, prices, sec, universe
 
@@ -39,6 +41,90 @@ def test_demo_planted_inputs_come_from_their_own_stream(tmp_path):
     more = demo.Demo(cfg)
     assert np.array_equal(base.prices, more.prices) and base.docs.equals(more.docs)
     assert more.noise_values.shape[0] == 2 and base.z is None
+
+
+# ---------------------------------------------------------------- the CSV market
+def _csv_study(tmp_path):
+    """markets/csv_example.yaml with a temporary registry and cache."""
+    cfg = run.read_config("csv_example")
+    cfg["cache_dir"] = str(tmp_path / "cache")
+    cfg["registry"] = {
+        "file": str(tmp_path / "registry.csv"),
+        "holdout_unlock_log": str(tmp_path / "unlocks.csv"),
+    }
+    return run.study_from_config("csv_example", cfg)
+
+
+@pytest.fixture(scope="module")
+def csv_rows(tmp_path_factory):
+    st = _csv_study(tmp_path_factory.mktemp("csv"))
+    return st, panel.model_rows(st, run.build_panel(st, "tuning"))
+
+
+def test_csv_example_finds_its_planted_signals_and_not_its_noise(csv_rows, tmp_path):
+    st, rows = csv_rows
+    st.registry.path = tmp_path / "registry.csv"
+    flow = run.test_candidate(st, rows, [], run.Candidate("flow"))
+    social = run.test_candidate(st, rows, [], run.Candidate("social"))
+    assert flow["t_tune"] >= flow["bar_tune"] and flow["kept"]
+    assert social["t_tune"] < social["bar_tune"] and not social["check_used"]
+    # the posts are read by the free keyword reader: an upgrade helps, an exploit hurts
+    wf = run.walk_forward(st)
+    for f in ("doc_upgrade_p", "doc_exploit_p"):
+        assert run.judge(st, rows, [], run.Candidate(f), wf)["t_tune"] > 3
+
+
+def test_csv_market_is_point_in_time_on_24_7_bars(csv_rows):
+    st, rows = csv_rows
+    cal = st.market.calendar
+    assert cal.kind == "continuous"
+    t = rows["decision_time"]
+    assert (t.dt.dayofweek == 0).all() and (t.dt.hour == 0).all()  # Monday 00:00 UTC
+    assert (rows["entry_time"] > t).all()  # entered at the first close after the decision
+    # every decision has the week's flow (published Sunday 12:00) and nothing older than 6 days
+    assert rows["flow"].notna().mean() > 0.99
+    # dead tokens leave the universe; their last window is a delisting
+    late = rows["decision_time"] > pd.Timestamp("2022-12-01", tz="UTC")
+    assert rows.loc[late, "entity_id"].nunique() == 27
+    assert set(rows.loc[rows["delisted"], "entity_id"]) == {"tok28", "tok29", "tok30"}
+
+
+def test_csv_timestamps_never_guess_earlier():
+    cal = data.make_calendar({"kind": "trading", "tz": "America/New_York"})
+    got = csv_market.parse_available_at(
+        pd.Series(["2021-03-05T12:00:00Z", "2021-03-05", "2021-03-05 12:00"]), cal
+    )
+    assert got[0] == pd.Timestamp("2021-03-05 12:00", tz="UTC")
+    assert got[1] == pd.Timestamp("2021-03-06", tz="America/New_York")  # date only: next midnight
+    assert got[2] == pd.Timestamp("2021-03-05 12:00", tz="America/New_York")  # naive: local time
+    with pytest.raises(ValueError):
+        csv_market.parse_available_at(pd.Series(["soon"]), cal)
+
+
+def test_csv_market_runs_from_the_cli_on_your_own_files(tmp_path, monkeypatch):
+    """Copy the example, as a user would, and run `engine test` on it."""
+    for f in ("prices.csv", "signals.csv"):
+        shutil.copy(run.path(f"examples/csv/{f}"), tmp_path / f)
+    cfg = run.read_config("csv_example")
+    cfg["csv"] = {"prices": str(tmp_path / "prices.csv"), "signals": str(tmp_path / "signals.csv")}
+    cfg["sources"] = {"signals": {"max_age_days": 6}}
+    cfg["features"] = {"baseline": [], "all": ["flow", "social"]}
+    cfg["registry"] = {
+        "file": str(tmp_path / "reg.csv"),
+        "holdout_unlock_log": str(tmp_path / "u.csv"),
+    }
+    cfg["cache_dir"] = str(tmp_path / "cache")
+    import yaml
+
+    (tmp_path / "mine.yaml").write_text(yaml.safe_dump(cfg))
+    from engine import cli
+
+    monkeypatch.chdir(tmp_path)
+    cli.main(
+        ["test", "--market", "mine", "--config", str(tmp_path / "mine.yaml"), "--feature", "flow"]
+    )
+    reg = pd.read_csv(tmp_path / "reg.csv")
+    assert reg["name"].tolist() == ["flow"] and bool(reg["kept"].iloc[0])
 
 
 # ---------------------------------------------------------------- US stocks, offline

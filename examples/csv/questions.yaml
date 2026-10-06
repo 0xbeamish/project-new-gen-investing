@@ -1,0 +1,15 @@
+# The question set for examples/csv/documents.csv (doc_type: post). Each question becomes an input
+# named doc_<id>_p. Keywords drive the free keyword reader; a paid reader reads the prompt.
+doc_type: post
+version: 1
+questions:
+  - id: upgrade
+    kind: yes_no
+    prompt: The post says an upgrade shipped or went live.
+    tag: reading
+    keywords: ['\bupgrade shipped', '\bupgrade went live']
+  - id: exploit
+    kind: yes_no
+    prompt: The post reports a security exploit or hack.
+    tag: reading
+    keywords: ['\bexploit\b', '\bhack(?:ed)?\b']
