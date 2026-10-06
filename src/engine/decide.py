@@ -318,8 +318,8 @@ def feedback_note(
         kept = qstat[qstat["status"] == "keep"]["question"].tolist()
         dropped = qstat[qstat["status"] == "drop"]["question"].tolist()
         lines.append(
-            f"Text questions kept: {', '.join(kept) or 'none'}"
-            + (f"; dropped for no record: {', '.join(dropped)}" if dropped else "")
+            f"Questions with a track record (kept on the cards): {', '.join(kept) or 'none'}"
+            + (f"; hidden from the cards for no record: {', '.join(dropped)}" if dropped else "")
         )
     if len(past):
         o = past[past["override"]]
@@ -367,17 +367,19 @@ def run_batches(
     if feedback:
         # a scale question can pay at its extremes with ~0 linear IC: score its levels too, so a
         # U-shaped question isn't dropped for "no record"
-        levels = {}
+        levels, note_labels = {}, dict(labels)
         for c, m in text_meta.items():
             if c in rows and m.get("kind") == "scale" and m.get("encoding") == "level":
                 lv = rows[c].round().clip(0, 4)
+                # the note names the encoding: one weight for the 0-4 answer vs one per answer
+                note_labels[c] = f"{labels.get(c, c)} [linear, 0-4]"
                 for k in range(5):
                     levels[f"{c}=={k}"] = (lv == k).astype(float).where(rows[c].notna())
                     text_meta = text_meta | {f"{c}=={k}": m | {"encoding": f"level {k}"}}
-                    labels = labels | {f"{c}=={k}": f"{labels.get(c, c)} = {k}"}
+                    note_labels[f"{c}=={k}"] = f"{labels.get(c, c)} [answer = {k}]"
         tab, ends = ic_table(rows.assign(**levels), [*features, *levels])
     else:
-        tab, ends = None, None
+        tab, ends, note_labels = None, None, labels
     model_hist_all = pd.DataFrame(
         {
             "t": top["decision_time"],
@@ -400,7 +402,7 @@ def run_batches(
             if len(past):
                 past = past[past["label_end"] < t]
                 drivers_past = dict(zip(past["batch"], past["drivers"]))
-            txt = feedback_note(mh, rec, qstat, past, labels, drivers_past)
+            txt = feedback_note(mh, rec, qstat, past, note_labels, drivers_past)
             dropped_q = set(qstat.loc[qstat["status"] == "drop", "question"])
         hidden = {c for c, m in text_meta.items() if m.get("question") in dropped_q}
         jobs = []

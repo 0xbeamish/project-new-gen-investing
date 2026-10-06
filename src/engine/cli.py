@@ -1,7 +1,7 @@
 """The `engine` command: seven commands, and `engine demo`, the whole system on a synthetic market.
 
   demo        everything on the demo market (numbers + documents with planted signals), ending with
-              the feedback loop at work: no keys, no downloads, about two minutes
+              the feedback loop at work: no keys, no downloads, about 2.5 minutes
   loop        THE FEEDBACK LOOP over the tuning years, period by period, as if live: weights from
               closed returns (outer loop), cards and the decider's pick, the period's returns, the
               re-weighting, and text fixes when a field stays mis-weighted (inner loop); against a
@@ -257,7 +257,7 @@ def run_demo(quick: bool = False) -> dict:
             f"   {fs:13s} IC {ev['ic']:+.3f} (t {ev['ic_t']:.1f})   decile spread net {ev['spread']['net']:+.2%}/month (t {ev['spread']['net_t']:.1f})"
         )
 
-    _line("\n2. Text scoring with the free keyword reader (dev split)")
+    _line("\n2. Text grader: is each question worth asking? (free keyword reader, dev split)")
     sets = demo_market.eval_sets(st.market, end=st.periods.tuning[1])
     qsets = tq.load(run.path(cfg["text"]["questions"]))
     reader = read.KeywordReader()
@@ -279,7 +279,7 @@ def run_demo(quick: bool = False) -> dict:
             else f"{row.gold_skill:.2f}"
         )
         _line(
-            f"   {row.question:16s} {row.tag:9s} gold skill {skill}  reaction gain {row.gain_IC_react:+.3f}  -> {row.recommend}"
+            f"   {row.question:16s} {row.tag:9s} gold skill {skill}  reaction gain {row.gain_IC_react:+.3f}  -> grader: {row.recommend}"
         )
 
     _line("\n3. Question-improvement loop (free proposer; judged on dev, confirmed once on test)")
@@ -289,7 +289,7 @@ def run_demo(quick: bool = False) -> dict:
     lp = text_improve.run_loop(sets, qsets, reader, text_improve.KeywordProposer(), lc)
     for row in lp["log"].itertuples():
         _line(
-            f"   {row.iteration}. {row.hypothesis[:60]:60s} dS {row.dS:+.3f} (low {row.lo:+.3f}) {'accepted' if row.accepted else 'rejected'}"
+            f"   {row.iteration}. {row.hypothesis:62s} dS {row.dS:+.3f} (low {row.lo:+.3f}) {'accepted' if row.accepted else 'rejected'}"
         )
     conf = text_improve.confirm(sets, qsets, lp["best_qsets"], reader, lc, "demo")
     out["loop"] = {"accepted": lp["accepted"], "S_dev": lp["best"]["summary"]["S"], "confirm": conf}
@@ -345,7 +345,10 @@ def run_demo(quick: bool = False) -> dict:
     _line(
         f"   {g['batches']} batches over {g['periods']} periods; model pick vs batch, net of costs: t {g['model_vs_batch_net_t']:.1f}"
     )
-    _line("   last feedback note:")
+    _line(
+        "   last feedback note (the decider's view: which inputs and questions have a track record"
+        " so far; separate from the grader's keep / drop in section 2):"
+    )
     for ln in notes[-1].splitlines():
         _line("     " + ln)
     out["feedback_loop"] = demo_feedback_loop(tmp, entities=150 if quick else 300)

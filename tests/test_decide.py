@@ -78,7 +78,7 @@ def test_feedback_note_reports_closed_data_only_and_changes_nothing(small_text):
     assert not out["override"].any()
     first_t = min(t for t, _ in notes)
     assert "little track record" in next(n for t, n in notes if t == first_t)
-    kept = next(ln for ln in notes[-1][1].splitlines() if ln.startswith("Text questions kept"))
+    kept = next(ln for ln in notes[-1][1].splitlines() if ln.startswith("Questions with a track"))
     assert "demand" in kept.split(";")[0]  # U-shaped: ~0 linear IC, but its levels have a record
     pd.testing.assert_frame_equal(w_before, prep["contrib"])  # reporting only
     tab, ends = decide.ic_table(prep["rows"], prep["features"])
