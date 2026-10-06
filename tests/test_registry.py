@@ -83,3 +83,23 @@ def test_committed_registries_share_one_count():
         run.path(reg["file"]), "m", [run.path(p) for p in reg["inherit"]]
     ).n_judged()
     assert count(small) == count(large)
+
+
+def _record_many(path, worker, n):
+    reg = Registry(path, "m")
+    for i in range(n):
+        reg.record({"kind": "test", "name": f"w{worker}-{i}", "t_tune": 0.5})
+
+
+def test_concurrent_writers_lose_no_rows(tmp_path):
+    import multiprocessing as mp
+
+    ctx = mp.get_context("spawn")
+    procs = [ctx.Process(target=_record_many, args=(tmp_path / "reg.csv", w, 15)) for w in range(4)]
+    for p in procs:
+        p.start()
+    for p in procs:
+        p.join()
+    own = Registry(tmp_path / "reg.csv", "m").own()
+    assert len(own) == 60 and own["name"].nunique() == 60
+    assert own["test_id"].is_unique

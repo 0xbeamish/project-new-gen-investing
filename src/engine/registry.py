@@ -3,7 +3,8 @@
 Every judged test is a row in the market's registry CSV, kept or not. Trying more ideas raises the
 bar for the next one (Bonferroni: a two-sided test at alpha / n), so the best of many lucky tries
 doesn't pass. Other registries (earlier research, other markets) are INHERITED read-only, so the
-count continues instead of restarting at zero.
+count continues instead of restarting at zero. Writes take a file lock and replace the file
+atomically, so two runs can't overwrite each other's rows.
 
 Periods, declared per market:
   tuning    everything is designed and judged here
@@ -15,7 +16,11 @@ Periods, declared per market:
 
 from __future__ import annotations
 
+import fcntl
+import os
 import subprocess
+import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -76,6 +81,17 @@ class CheckGrant:
     """Proof that the registry opened the check period for one test (Registry.open_check)."""
 
     bar: float
+
+
+@contextmanager
+def _locked(path: Path):
+    """An exclusive lock on <path>.lock for the duration of a registry write."""
+    with open(f"{path}.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 class CheckLimitReached(RuntimeError):
@@ -179,17 +195,21 @@ class Registry:
     # ---------- writing ----------
     def record(self, row: dict) -> dict:
         """Append one row (kept or not) and return it with its id and timestamp."""
-        own = self.own()
-        row = {c: row.get(c) for c in COLUMNS} | {
-            "market": self.market,
-            "origin": "engine",
-            "test_id": f"{self.market}-{len(own) + 1:04d}",
-            "timestamp": row.get("timestamp")
-            or pd.Timestamp.now(tz="UTC").strftime("%Y-%m-%dT%H:%MZ"),
-        }
-        out = pd.concat([own, pd.DataFrame([row])], ignore_index=True)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        out[COLUMNS].to_csv(self.path, index=False)
+        with _locked(self.path):  # read, append and replace as one step
+            own = self.own()
+            row = {c: row.get(c) for c in COLUMNS} | {
+                "market": self.market,
+                "origin": "engine",
+                "test_id": f"{self.market}-{len(own) + 1:04d}",
+                "timestamp": row.get("timestamp")
+                or pd.Timestamp.now(tz="UTC").strftime("%Y-%m-%dT%H:%MZ"),
+            }
+            out = pd.concat([own, pd.DataFrame([row])], ignore_index=True)
+            fd, tmp = tempfile.mkstemp(dir=self.path.parent, suffix=".csv.tmp")
+            with os.fdopen(fd, "w") as f:
+                out[COLUMNS].to_csv(f, index=False)
+            os.replace(tmp, self.path)
         return row
 
     def open_check(self) -> CheckGrant:

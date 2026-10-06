@@ -10,3 +10,5 @@ data/*_universe*.csv
 .pytest_cache/
 .ruff_cache/
 results/
+*.csv.lock
+*.csv.tmp
