@@ -104,7 +104,8 @@ def study_from_config(market: str, cfg: dict) -> Study:
     specs = {}
     for name, s in (cfg.get("sources") or {}).items():
         s = s or {}
-        if s.get("type") == "text":  # documents + questions + a reader
+        text = s.get("type") == "text"
+        if text:  # documents + questions + a reader
             from engine.spend import Ledger
             from engine.text.source import TextSource
 
@@ -119,9 +120,12 @@ def study_from_config(market: str, cfg: dict) -> Study:
             )
         else:
             src = factories[s.get("type", name)](mkt, s.get("params"))
+        features = s.get("features")
+        if text and not features:  # listed under params: the columns exist even if nothing was read
+            features = (s.get("params") or {}).get("features")
         specs[name] = panel.SourceSpec(
             source=src,
-            features=s.get("features"),
+            features=features,
             max_age_days=s.get("max_age_days"),
             lookback_days=int(s.get("lookback_days", 3650)),
         )

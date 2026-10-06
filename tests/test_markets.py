@@ -383,3 +383,14 @@ def test_earnings_releases_are_masked_and_read_from_the_cache_only(tmp_path, mon
     assert "Zorblax" not in t and "ZRBX" not in t and "COMPANY_A" in t
     # usable from the next New York midnight after acceptance
     assert d["available_at"].iloc[0] == pd.Timestamp("2015-02-04 05:00", tz="UTC")
+
+
+def test_a_text_source_with_no_documents_still_has_its_columns(tmp_path):
+    (tmp_path / "docs.csv").write_text("entity,available_at,doc_type,text\n")
+    cfg = run.read_config("csv_example")
+    cfg["csv"]["documents"] = str(tmp_path / "docs.csv")
+    cfg["cache_dir"] = str(tmp_path / "cache")
+    cfg["sources"]["posts"]["params"]["features"] = ["doc_upgrade_p", "doc_exploit_p"]
+    st = run.study_from_config("csv_example", cfg)
+    f = run.build_panel(st, "tuning").frame
+    assert f["doc_upgrade_p"].isna().all() and f["doc_exploit_p"].isna().all()
