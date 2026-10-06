@@ -1,0 +1,96 @@
+# Crypto: the most-traded Binance USDT pairs, weekly, with DeFiLlama fees, perp funding and hacks.
+# All free, no keys. `engine build --fetch --market crypto` fills .cache/crypto (Binance's public
+# archive keeps delisted pairs, so dead tokens stay in the universe). Plug-in: engine.markets.crypto.
+plugin: crypto
+data_end: "2024-12-31"       # bars, fees, funding and hacks after this are never read: 2025+ stays unseen
+
+calendar: {kind: continuous, close: "23:59", decide_after_close: 1min}   # Binance daily bars close 23:59:59 UTC
+schedule: weekly             # decisions Monday 00:00 UTC
+labels:
+  horizon: 7                 # one week of daily bars
+  ended_if_no_bar_for_days: 10
+  delisted_return: -0.30     # added to a window cut short by delisting (as for stocks)
+
+universe:
+  top: 100                   # by mean daily USDT volume over the last 30 bars before the decision
+  volume_days: 30
+  min_history_bars: 90       # listed at least ~3 months (new listings have no features yet)
+  exclude: [USDC, BUSD, TUSD, USDP, PAX, DAI, FDUSD, UST, USTC, SUSD, USDS, USDSB, EUR, GBP, AUD,
+            BRL, TRY, PAXG, WBTC, BETH, BKRW, BIDR, IDRT, BVND, UAH, ZAR, NGN, RUB, AEUR, EURI,
+            USD1, USDE, XUSD, BFUSD, RLUSD]   # stablecoins, fiat, gold, wrapped copies
+  renamed: [NPXS, BCHABC, LEND, ERD, BTT, MATIC, MC, OCEAN, AGIX, RNDR]
+  # a renamed / migrated pair ends without the delisting penalty (its last window runs to the last bar)
+  gap_days: 10               # a pair with no bar for 10+ days is split: the part after the gap is a
+                             #   new entity (Binance reused LUNAUSDT for a different token in 2022)
+
+costs:
+  taker_fee_bps: 10          # Binance spot, per side, no discount
+  spread_days: 90            # + measured spread: mean of Abdi-Ranaldo and Corwin-Schultz over the
+                             #   last 90 daily bars before the decision
+
+sources:
+  price:
+    features: [px_mom_1w, px_mom_4w, px_mom_12w, px_vol_4w, px_log_dvol]
+  funding:
+    features: [funding_7d]
+  fees:
+    features: [fee_vs_price_90d, fee_growth_90d]
+  hacks:
+    features: [hack_usd_30d]
+
+features:
+  baseline: [px_mom_1w, px_mom_4w, px_mom_12w, px_vol_4w, px_log_dvol]
+  all: ["@baseline", funding_7d, fee_vs_price_90d, fee_growth_90d, hack_usd_30d]
+
+model:
+  name: ridge
+  alpha: 10.0
+  block: Q                   # refit each quarter
+  min_train_periods: 26      # half a year of weeks before the first prediction
+
+portfolio:
+  band: {enter: 0.8, exit: 0.6}   # buy the top 20%, hold until it leaves the top 40%
+
+periods:                     # fixed before any result was computed
+  tuning: ["2021-01-01", "2024-01-01"]
+  check: ["2024-01-01", "2025-01-01"]
+  holdout_start: "2025-01-01"
+
+registry:
+  file: data/engine/crypto/registry.csv
+  inherit: [data/registry_aggregate.csv, data/engine/us_smallcap/registry.csv,
+            data/engine/us_largecap/registry.csv]   # one shared count with every stock test
+  check_limit: 30
+  holdout_unlock_log: data/engine/crypto/holdout_unlocks.csv
+
+discovery:
+  transforms: [level]
+  candidates: [funding_7d, fee_vs_price_90d, hack_usd_30d]
+  max_tests: 3
+
+loop:
+  features: all
+  refit: M
+
+# PRE-REGISTRATION (committed before any panel was built or any return computed).
+# Three judged tests, in this order, each `engine test --market crypto --feature <f>` (level,
+# universal), each logged whatever the result, each run only after the owner says yes:
+#   1. funding_7d         mean perp funding rate over the 7 days before the decision.
+#                         Hypothesis: NEGATIVE (crowded, paying longs underperform next week).
+#   2. fee_vs_price_90d   log growth of 30-day protocol fees over 90 days minus log price growth
+#                         over the same 90 days (fees outgrew price = cheaper). Hypothesis: POSITIVE.
+#                         DeFiLlama has no free market-cap history, so this replaces fees/market cap.
+#   3. hack_usd_30d       log(1 + USD lost to hacks of the token's protocol in the last 30 days).
+#                         Hypothesis: NEGATIVE (post-hack drift). Sparse: expect a large MDE.
+# Each is judged against the baseline (price momentum 1/4/12 weeks, 4-week volatility, log dollar
+# volume): the statistic is the per-week gain in rank IC over the baseline, t over tuning weeks,
+# which must reach the shared registry's next bar at run time (about 3.6). A sign opposite to the
+# hypothesis is reported as such, never re-tested. fee_growth_90d is descriptive only.
+# Known weaknesses, accepted up front:
+#   - DeFiLlama revises past fees (new adapters are back-filled), so old fee values are what is known
+#     now, not what was known then; fees are stamped usable a day after the day ends.
+#   - The universe is Binance-listed tokens only, and pair renames not in `renamed` count as delistings.
+#   - A token swap that re-scales the price inside one pair shows as a fake return; rank IC (the
+#     judged statistic) is robust to it, portfolio returns are not.
+#   - Text (Reddit, X, governance) is not here: an AI reader remembers 2021-2024, so text is tested
+#     forward only, from data collected from now on.
