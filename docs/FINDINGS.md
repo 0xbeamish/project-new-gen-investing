@@ -14,7 +14,9 @@ version without it; a month-by-month replay of the self-adjusting loops did not 
 system either. The market prices "did X happen" within days. A slow signal in large caps did no
 better: a pre-registered test of visibly inflecting fundamentals, held 36 months, earned nothing
 over the large-cap universe (t 0.04). On crypto (2021-2023, weekly), perp funding, DeFiLlama fee
-growth and hacks each added nothing measurable over price momentum.
+growth and hacks each added nothing measurable over price momentum; a trading-volume surge
+predicted underperformance out of sample (2024, t 4.2), but it is mostly short-term reversal and
+low volatility, which rank well and do not pay after costs.
 
 ## Why no edge so far
 
@@ -271,6 +273,24 @@ The same engine on a different asset class, free data only (Binance public archi
 
   None kept; the check year (2024) was not opened. The measured gains are near zero, far below
   the MDE: none of the three adds a large edge over price features; a small one can't be ruled out.
+- **Exploration, then two confirmations on 2024** (pre-registration 2, 6844b8c). Descriptive
+  sector analysis of 2021-2023 (token x quarter, 14 hand-labelled sectors; not logged) found that
+  fundamentals grew *with* price within the quarter (active users, DEX volume, fees), but nothing
+  measured *before* a quarter predicted it beyond luck. Two leads were confirmed once on 2024 alone
+  (`engine confirm`: the feature's own weekly rank IC vs sector-adjusted returns, times the
+  pre-registered sign):
+
+  | lead | scope | 2024 rank IC (x sign) | t | bar | kept |
+  |---|---|---|---|---|---|
+  | `dex_volume_growth_90d`, + | L1 (median 16 names) | -0.028 | -0.83 | 2.498 | no (MDE 0.117: underpowered) |
+  | `px_volume_growth_90d`, - | all (median 96) | +0.062 | **4.21** | 2.576 | **yes** |
+
+  The kept one is mostly the price baseline in disguise. On the tuning weeks, a 90-day volume surge
+  ranks with 12-week momentum at 0.63, and plain short-term reversal (`px_mom_1w`, -0.057, t 5.2) and
+  low volatility (`px_vol_4w`, -0.077, t 6.2) are as strong. Net of momentum, volatility and size,
+  volume growth adds only 0.018 rank IC (t 2.0). The price baseline as a model ranks weekly winners
+  well (rank IC 0.083, t 6.1, tuning) but does not pay after costs: decile spread net +0.32%/week
+  (t 0.28), the long-only band net +0.06%/week (t 0.34), with 72% of its gross lost to costs.
 - **Not tested here.** Text (Reddit, X, governance proposals): an AI reader remembers 2021-2024,
   so text needs forward collection and paper trading.
 
