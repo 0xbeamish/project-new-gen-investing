@@ -1,0 +1,4 @@
+test_id,market,timestamp,kind,name,features,scope,metric,t_tune,bar_tune,check_used,t_check,bar_check,gain_tune,gain_check,kept,note,origin,count,mde_50,mde_80
+crypto-0001,crypto,2026-10-07T02:44Z,test,funding_7d,funding_7d,universal,rank_ic_gain_vs_baseline,-1.223,2.394,False,,,-0.00175,,False,"pre-registered crypto test (0de36c8, amended 55ba17b) 117 periods",engine,,0.0376,0.05082
+crypto-0002,crypto,2026-10-07T02:44Z,test,fee_vs_price_90d,fee_vs_price_90d,universal,rank_ic_gain_vs_baseline,-1.224,2.394,False,,,-0.00065,,False,"pre-registered crypto test (0de36c8, amended 55ba17b) 117 periods",engine,,0.0376,0.05082
+crypto-0003,crypto,2026-10-07T02:44Z,test,hack_usd_30d,hack_usd_30d,universal,rank_ic_gain_vs_baseline,1.266,2.394,False,,,0.00022,,False,"pre-registered crypto test (0de36c8, amended 55ba17b) 117 periods",engine,,0.0376,0.05082

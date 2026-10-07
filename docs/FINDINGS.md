@@ -13,7 +13,8 @@ costs, and no LLM layer (as reader inputs, as a decider, with or without feedbac
 version without it; a month-by-month replay of the self-adjusting loops did not beat the frozen
 system either. The market prices "did X happen" within days. A slow signal in large caps did no
 better: a pre-registered test of visibly inflecting fundamentals, held 36 months, earned nothing
-over the large-cap universe (t 0.04).
+over the large-cap universe (t 0.04). On crypto (2021-2023, weekly), perp funding, DeFiLlama fee
+growth and hacks each added nothing measurable over price momentum.
 
 ## Why no edge so far
 
@@ -246,6 +247,32 @@ handful of famous names. Earlier tests ranked small/mid caps monthly and exclude
 - **The famous names.** Whether the two names that prompted this were in the top decile in
   2013-2016 is anecdote: choosing them is hindsight. It was looked at descriptively and is
   company-level, so it isn't recorded here.
+
+### Crypto, weekly (crypto)
+The same engine on a different asset class, free data only (Binance public archive, DeFiLlama).
+- **Market.** The 100 most-traded Binance USDT pairs each week, by mean daily volume over the 30
+  days before the decision. Delisted pairs included: 341 tokens over 2021-2023, 72 of which stop
+  trading before 2025. Stablecoins, fiat, gold and leveraged tokens excluded. 2025+ was never
+  downloaded.
+- **Costs.** 2 x (taker fee 10 bp + square-root impact of a $10k trade): median 46 bp round trip
+  (IQR 36-60). The stock work's spread estimators failed on 24/7 bars (median 0 and 255 bp).
+- **Tests** (pre-registered in 0de36c8 before any data was built; amended in 7f4e38a and 55ba17b
+  before any test). Crypto keeps its own registry: the owner chose, before any result, not to share
+  the stock tests' count (bar 3.63, which could only see a rank-IC gain of 0.070). The three tests
+  form one family at t >= 2.394. Each is the weekly gain in rank IC over a price baseline
+  (momentum 1/4/12 weeks, 4-week volatility, log dollar volume), 117 scored weeks of 2021-2023.
+  Minimum detectable gain: 0.051 at 80% power, 0.038 at 50%.
+
+  | input | coverage | gain in rank IC | t (bar 2.394) |
+  |---|---|---|---|
+  | `funding_7d`: mean perp funding rate, last 7 days | 83% | -0.0018 | -1.22 |
+  | `fee_vs_price_90d`: 90-day fee growth minus price growth (DeFiLlama) | 26% | -0.0007 | -1.22 |
+  | `hack_usd_30d`: USD lost to hacks of the token's protocol, last 30 days | 12 tokens | +0.0002 | +1.27 |
+
+  None kept; the check year (2024) was not opened. The measured gains are near zero, far below
+  the MDE: none of the three adds a large edge over price features; a small one can't be ruled out.
+- **Not tested here.** Text (Reddit, X, governance proposals): an AI reader remembers 2021-2024,
+  so text needs forward collection and paper trading.
 
 ## What would change the conclusion
 
