@@ -8,7 +8,8 @@ Market
              A pair with no bar for `gap_days` is split: the part after the gap is a new entity
              (LUNA~2022-05-31), since Binance reuses tickers
   universe   the `top` entities by mean daily USDT volume over the last `volume_days` bars closed
-             before the decision, listed at least `min_history_bars`, with a bar in the last 3 days
+             before the decision, listed at least `min_history_bars`, with a bar in the last 3 days.
+             group = the token's sector from `sectors` (a CSV), so returns are sector-adjusted
   labels     enter at the first daily close after the decision, hold `horizon` bars. A series that
              stops for good is a delisting: `delisted_return` is added, except for `renamed` tokens
   cost_bps   round trip: 2 x (`taker_fee_bps` + square-root impact of a `trade_usd` trade: daily
@@ -25,6 +26,8 @@ Sources (all computed at the decision times asked for, from data usable strictly
              A day's fees are usable from the end of the next day
   hacks      hack_usd_30d: log(1 + USD lost to hacks of the token's protocol, usable in the last
              30 days); a hack is usable from the end of the day after it. 0 when none
+  growth     px_volume_growth_90d, dex_volume_growth_90d: log(30-day sum / the 30 days ending 90
+             days earlier) of USDT volume, and of DEX volume (protocol, else chain; DeFiLlama)
 """
 
 from __future__ import annotations
@@ -37,7 +40,8 @@ import pandas as pd
 
 from engine import data
 from engine.market import forward_returns
-from engine.markets.crypto import binance, llama
+from engine.markets.crypto import binance, indicators, llama
+from engine.run import path as repo_path
 
 LEVERAGED = re.compile(r"^(.{2,})(UP|DOWN|BULL|BEAR)$")
 FETCH_SINCE = "2020-01"  # warm-up for 2021: 90 bars of history + 90-day features
@@ -81,6 +85,12 @@ class Crypto:
         self.trade_usd = float(c.get("trade_usd", 10000))
         self.impact_days = int(c.get("impact_days", 30))
         self.data_end = pd.Timestamp(cfg["data_end"]) if cfg.get("data_end") else None
+        sectors = u.get("sectors")  # token -> group (sector); returns are then sector-adjusted
+        self.sector = (
+            pd.read_csv(repo_path(sectors), keep_default_na=False).set_index("token")["sector"]
+            if sectors
+            else None
+        )
         self._series = None
 
     @property
@@ -163,7 +173,10 @@ class Crypto:
         vol, hist, last = self.vol.iloc[i], self.hist.iloc[i], self.last_bar.iloc[i]
         ok = (hist >= self.min_history) & (i - last <= 3) & vol.notna()
         pick = vol[ok].sort_values(ascending=False).head(self.top)
-        return pd.DataFrame({"entity_id": pick.index.astype(str)})
+        out = pd.DataFrame({"entity_id": pick.index.astype(str)})
+        if self.sector is not None:
+            out["group"] = out["entity_id"].str.split("~").str[0].map(self.sector).fillna("Other")
+        return out
 
     def labels(self, rows: pd.DataFrame, horizon: int) -> pd.DataFrame:
         """Forward returns: enter at the first close after the decision, exit `horizon` bars later."""
@@ -382,6 +395,51 @@ class Hacks(_Base):
         return df.assign(source=self.name)[data.OBS_COLUMNS]
 
 
+class Growth(_Base):
+    """90-day growth of 30-day activity sums: USDT trading volume (from the bars) and DEX volume
+    (the token's protocol, else its chain, from DeFiLlama; a day usable from the end of the next)."""
+
+    name = "growth"
+
+    def fetch(self, start, end) -> None:
+        indicators.fetch(self._bases(start, end))
+
+    @staticmethod
+    def _growth(s: pd.Series, last: pd.Timestamp, floor: float) -> float:
+        def window(d):
+            w = s[(s.index > d - pd.Timedelta(days=30)) & (s.index <= d)]
+            return w.sum() if len(w) >= 18 else np.nan  # at least 60% of the days
+
+        a, b = window(last - pd.Timedelta(days=90)), window(last)
+        return float(np.log(b / a)) if a > floor and b > floor else np.nan
+
+    def observations_at(self, rows: pd.DataFrame) -> pd.DataFrame:
+        cal, out = self.market.calendar, []
+        for e, g in rows.groupby("entity_id", sort=False):
+            b = self.market.series[e]
+            qv = pd.Series(b["quote_volume"].astype(float).to_numpy(), index=b["time"])
+            closes = pd.DatetimeIndex(b["close_at"])
+            ind = indicators.series(e.split("~")[0])
+            dex = ind.get("dex_volume", ind.get("chain_dex_volume"))
+            if dex is not None and self.market.data_end is not None:
+                dex = dex[dex.index <= self.market.data_end]
+            for t in pd.DatetimeIndex(g["decision_time"].unique()):
+                i = int(closes.searchsorted(t, side="left"))  # bars 0..i-1 closed before t
+                if i > 120:
+                    v = self._growth(qv.iloc[:i], b["time"].iloc[i - 1], 1e4)
+                    if np.isfinite(v):
+                        out.append((e, closes[i - 1], "px_volume_growth_90d", v))
+                if dex is not None and len(dex):
+                    usable = cal.bar_close(dex.index + pd.Timedelta(days=1))
+                    j = int(usable.searchsorted(t, side="left"))
+                    if j > 0:
+                        v = self._growth(dex.iloc[:j], dex.index[j - 1], 1e3)
+                        if np.isfinite(v):
+                            out.append((e, usable[j - 1], "dex_volume_growth_90d", v))
+        df = pd.DataFrame(out, columns=["entity_id", "available_at", "feature", "value"])
+        return df.assign(source=self.name)[data.OBS_COLUMNS]
+
+
 def build(cfg: dict):
     """The plug-in entry point."""
     return Crypto(cfg), {
@@ -389,4 +447,5 @@ def build(cfg: dict):
         "funding": Funding,
         "fees": Fees,
         "hacks": Hacks,
+        "growth": Growth,
     }

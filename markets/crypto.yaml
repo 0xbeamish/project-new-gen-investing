@@ -20,6 +20,7 @@ universe:
             USD1, USDE, XUSD, BFUSD, RLUSD]   # stablecoins, fiat, gold, wrapped copies
   renamed: [NPXS, BCHABC, LEND, ERD, BTT, MATIC, MC, OCEAN, AGIX, RNDR, KEEP, NU, TOMO, GAL, KLAY]
   # a renamed / migrated pair ends without the delisting penalty (its last window runs to the last bar)
+  sectors: markets/crypto_sectors.csv   # group = sector: returns are sector-adjusted (added 2026-10-07)
   gap_days: 10               # a pair with no bar for 10+ days is split: the part after the gap is a
                              #   new entity (Binance reused LUNAUSDT for a different token in 2022)
 
@@ -37,6 +38,8 @@ sources:
     features: [fee_vs_price_90d, fee_growth_90d]
   hacks:
     features: [hack_usd_30d]
+  growth:
+    features: [px_volume_growth_90d, dex_volume_growth_90d]
 
 features:
   baseline: [px_mom_1w, px_mom_4w, px_mom_12w, px_vol_4w, px_log_dvol]
@@ -107,3 +110,18 @@ loop:
 #   - Registry, decided by the owner before any test: crypto keeps its OWN count instead of sharing
 #     the stock tests' (bar 3.626, MDE 0.070, above any edge measured so far). The three tests form
 #     one family, each judged at the Bonferroni bar for three: t >= 2.394 (MDE ~0.051 at 80% power).
+
+
+# PRE-REGISTRATION 2 (2026-10-07, committed before any 2024 row was built): two confirmations of
+# leads found by exploring 2021-2023 (descriptive, by quarter, by sector; not logged). Each is
+# `engine confirm --market crypto --feature <f> --scope <s> --sign <d>`: the feature's own weekly
+# rank IC on 2024 ALONE (the check period; one look each), with returns adjusted to the token's
+# sector mean that week (group = sector), times the sign; t over the weeks of 2024. Bar: the
+# registry's next bar at run time (2.498, then 2.576: they count as tests 4 and 5). Kept if t >= bar.
+#   4. dex_volume_growth_90d, scope L1, sign +1: L1 tokens whose DEX volume (last 30 days vs the 30
+#      days ending 90 days earlier; the protocol's, else the chain's) grew beat other L1s next week.
+#      Explored: L1 winners +10% vs losers -51% in the prior quarter (41 vs 32 token-quarters).
+#   5. px_volume_growth_90d, universal, sign -1: tokens whose USDT trading volume (same windows)
+#      surged underperform their sector next week. Explored: rank corr -0.08, t -1.77 (12 quarters).
+# Exploration used quarterly returns; here the horizon stays one week (52 independent weeks beat
+# 4 overlapping quarters for power; a slow signal should show up in every week).

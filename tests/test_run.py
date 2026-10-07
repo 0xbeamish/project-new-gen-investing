@@ -159,3 +159,15 @@ def test_the_cohort_tests_mde_uses_its_months_and_the_assumed_noise(tmp_path):
     assert p["underpowered"] is False  # 0.49%/month at the first bar...
     st.registry = Registry(tmp_path / "r.csv", "m", [run.path("data/registry_aggregate.csv")])
     assert run.cohort_power(st)["mde_80"] > p["mde_80"]  # ...and more after 84 earlier tests
+
+
+def test_confirm_judges_the_raw_feature_on_the_check_period_alone_and_counts(study):
+    pos = run.confirm(study, Candidate("planted"), sign=1)
+    neg = run.confirm(study, Candidate("planted"), sign=-1)  # the wrong pre-registered direction
+    assert pos["kind"] == "confirm" and pos["check_used"] is True
+    assert pos["t_check"] >= pos["bar_check"] and pos["kept"] is True
+    assert neg["t_check"] < 0 and neg["kept"] is False
+    assert neg["bar_check"] > pos["bar_check"]  # the second confirmation faced a higher bar
+    assert study.registry.n_judged() == 2 and study.registry.check_uses() == 2
+    with pytest.raises(ValueError):
+        run.confirm(study, Candidate("planted"), sign=0)

@@ -192,3 +192,28 @@ def test_a_chain_token_maps_to_its_chain_and_true_ties_to_nothing(monkeypatch):
     )
     monkeypatch.setattr(llama, "fee_entities", lambda max_age_s=None: e)
     assert llama.token_fee_slugs(["NEAR", "ALT"]) == {"NEAR": "near"}
+
+
+def test_growth_uses_volume_before_the_decision_and_dex_volume_from_the_next_days_close(
+    monkeypatch,
+):
+    b = bars("2021-01-01", 300)
+    m = market({"ETH": b})
+    days = pd.date_range("2021-01-01", "2021-10-31", freq="D")
+    dex = pd.Series(1e6, index=days)
+    monkeypatch.setattr(crypto.indicators, "series", lambda token: {"chain_dex_volume": dex})
+    t = at("2021-09-30")
+    rows = pd.DataFrame({"entity_id": ["ETH"], "decision_time": [t]})
+    src = crypto.Growth(m)
+    obs = src.observations_at(rows)
+    assert (obs["available_at"] < t).all()
+    base = obs.set_index("feature")["value"]
+    assert base["dex_volume_growth_90d"] == pytest.approx(0.0)
+    assert base["px_volume_growth_90d"] == pytest.approx(0.0)
+    dex[pd.Timestamp("2021-09-30")] = 1e12  # usable only at the end of 10-01: after t
+    s = m._series["ETH"]
+    s.loc[s["time"] >= pd.Timestamp("2021-10-01"), "quote_volume"] = 1e15  # after t
+    after = src.observations_at(rows).set_index("feature")["value"]
+    pd.testing.assert_series_equal(base, after)
+    dex[pd.Timestamp("2021-09-29")] = 1e12  # usable at the end of 09-30: before t
+    assert src.observations_at(rows).set_index("feature")["value"]["dex_volume_growth_90d"] > 1

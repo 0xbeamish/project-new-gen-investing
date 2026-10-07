@@ -49,6 +49,7 @@ Keys, only if the user gives them: copy `.env.example` to `.env` (git-ignored). 
 | `build` | panel for tuning periods + point-in-time check (`--fetch` downloads first) | JSON: rows, decision times, entities, labelled rows, coverage per feature |
 | `report` | a feature set's model on tuning periods (`--features`, default `baseline`); descriptive, never logged | JSON: rank IC and t, decile spread and portfolios gross / net, average weights, registry state, holdout looks |
 | `test` | ONE judged test, logged whatever the result: `--feature` (+ `--transform`, `--scope`), or `--decider`, or the YAML's `cohort_test` | JSON: the registry row (t_tune vs bar_tune, check used, kept) |
+| `confirm` | ONE out-of-sample test of a lead found by exploring the tuning years: `--feature`, `--scope`, `--sign` (the pre-registered direction); its own rank IC on the check period alone, one check look, counts toward the bar | JSON: the registry row (t_check vs bar_check, kept) |
 | `discover` | candidates from the YAML (or every feature x transform), each a logged test, until one is kept | JSON list of registry rows |
 | `grade-text` | the text eval harness on the market's eval sets (`--split dev`) | JSON summary (S, A-E, gates) and a keep / drop table per question |
 
@@ -88,7 +89,7 @@ report, test) is paid: `--estimate` prints the cost only.
   runs tests) opens the check period by itself when a candidate clears the tuning bar, and each
   pass uses one of the market's rationed check-period looks. On the toy markets (demo,
   csv_example) that is fine. On any research market (us_smallcap, us_largecap, crypto, or the user's own),
-  ask the user before running `test`, `discover` or `loop --log`.
+  ask the user before running `test`, `confirm`, `discover` or `loop --log`.
 - **Log every judged test.** Use `engine test` / `discover` / `loop --log` (or `run.test_candidate`);
   never run a judged comparison off the books, and never delete or edit registry rows. A logged
   loop needs its `loop:` block (with `name`) committed before the run, and gets one look. Every

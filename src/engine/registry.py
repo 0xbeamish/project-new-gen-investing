@@ -172,10 +172,10 @@ class Registry:
 
     @staticmethod
     def judged(rows: pd.DataFrame) -> pd.Series:
-        """A row counts toward the bar if it is a test with a t-statistic, or a loop's internal
-        judgments."""
+        """A row counts toward the bar if it is a test with a t-statistic, a loop's internal
+        judgments, or a confirmation on the check period."""
         test = (rows["kind"] == "test") & pd.to_numeric(rows["t_tune"], errors="coerce").notna()
-        return test | (rows["kind"] == "loop_internal")
+        return test | rows["kind"].isin(["loop_internal", "confirm"])
 
     def n_judged(self) -> int:
         """Judged tests so far, inherited included (a loop_internal row counts `count` times)."""

@@ -1,4 +1,4 @@
-"""The `engine` command: seven commands, and `engine demo`, the whole system on a synthetic market.
+"""The `engine` command: eight commands, and `engine demo`, the whole system on a synthetic market.
 
   demo        everything on the demo market (numbers + documents with planted signals), ending with
               the feedback loop at work: no keys, no downloads, about 2.5 minutes
@@ -16,6 +16,9 @@
   test        ONE judged test, logged whatever the result: --feature (+ --transform, --scope)
               against the baseline; --decider (decider vs the model's own pick); with neither, the
               YAML's pre-registered cohort_test. The check period opens only if tuning clears the bar
+  confirm     ONE logged out-of-sample test of a candidate found by exploring the tuning years: its
+              own rank IC x --sign (the pre-registered direction) on the check period ALONE, within
+              --scope; uses one check-period look and counts toward the bar
   discover    the discovery loop: candidates from the YAML (or every feature x transform), each a
               logged test, until one is kept or a stop rule fires
   grade-text  the text eval harness on the market's eval sets: S = 0.30 A + 0.25 B + 0.30 C +
@@ -41,7 +44,7 @@ from engine.text import grade, read
 from engine.text import improve as text_improve
 from engine.text import questions as tq
 
-COMMANDS = ["demo", "loop", "build", "report", "test", "discover", "grade-text"]
+COMMANDS = ["demo", "loop", "build", "report", "test", "confirm", "discover", "grade-text"]
 
 
 def load_env(path: Path | None = None) -> None:
@@ -121,6 +124,16 @@ def cmd_test(study, args) -> None:
         _print(res)
     else:
         raise SystemExit("test needs --feature or --decider (or a cohort_test block in the YAML)")
+
+
+def cmd_confirm(study, args) -> None:
+    """One logged out-of-sample test on the check period (a candidate found by exploration)."""
+    if not args.feature or args.sign is None:
+        raise SystemExit(
+            "confirm needs --feature and --sign (the pre-registered direction, 1 or -1)"
+        )
+    c = run.Candidate(args.feature, args.transform, args.scope)
+    _print(run.confirm(study, c, args.sign, note=args.note or ""))
 
 
 def cmd_loop(study, args) -> None:
@@ -372,9 +385,12 @@ def main(argv=None) -> None:
     ap.add_argument("--fetch", action="store_true", help="build: fill the caches first (network)")
     ap.add_argument("--features", default="baseline", help="report, test --decider: feature set")
     ap.add_argument("--final", action="store_true", help="report: open the holdout once (logged)")
-    ap.add_argument("--feature", help="test: the candidate feature")
-    ap.add_argument("--transform", default="level", help="test: level | chg<k> | pct<k> | log")
-    ap.add_argument("--scope", default="universal", help="test: universal or one group")
+    ap.add_argument("--feature", help="test, confirm: the candidate feature")
+    ap.add_argument(
+        "--transform", default="level", help="test, confirm: level | chg<k> | pct<k> | log"
+    )
+    ap.add_argument("--scope", default="universal", help="test, confirm: universal or one group")
+    ap.add_argument("--sign", type=int, choices=[1, -1], help="confirm: pre-registered direction")
     ap.add_argument("--decider", help="loop, report, test: none | jev | claude")
     ap.add_argument("--log", action="store_true", help="loop: record it as ONE registry test")
     ap.add_argument("--estimate", action="store_true", help="paid steps: print the cost only")
@@ -396,6 +412,7 @@ def main(argv=None) -> None:
         "build": cmd_build,
         "report": cmd_report,
         "test": cmd_test,
+        "confirm": cmd_confirm,
         "discover": cmd_discover,
         "grade-text": cmd_grade_text,
     }[args.cmd](study, args)

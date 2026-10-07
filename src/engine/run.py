@@ -417,6 +417,56 @@ def check(study, baseline: list[str], c: Candidate, wf, grant: CheckGrant) -> di
     }
 
 
+def confirm(study, c: Candidate, sign: int, note: str = "") -> dict:
+    """ONE logged out-of-sample test of a candidate found by exploring the tuning years: the
+    candidate's own per-period rank IC (no model), times its pre-registered sign, on the check
+    period ALONE, within its scope. Uses one check-period look; the bar is the registry's next bar
+    (it counts as a judged test). Kept if t reaches the bar."""
+    if sign not in (1, -1):
+        raise ValueError("sign is the pre-registered direction: 1 or -1")
+    reg = study.registry
+    bar = reg.next_bar()
+    grant = reg.open_check()
+    rows = panel.model_rows(study, build_panel(study, "check", grant=grant))
+    f = in_stage(study, rows.assign(score=sign * transform(rows, c.feature, c.transform)), "check")
+    f = f.dropna(subset=["score", "fwd_return"])
+    if c.scope != "universal":
+        f = f[f["group"] == c.scope]
+    n = f.groupby("decision_time").size()
+    n = n[n > 2]
+    noise = float(np.sqrt((1 / (n - 1)).mean())) if len(n) else float("nan")
+    power = power_check(
+        "rank IC",
+        noise,
+        len(n),
+        bar,
+        label_overlap(study),
+        "null sd of a rank IC, 1/sqrt(N-1)",
+        "rank IC on the check period",
+    )
+    ic = score.rank_ic(f[f["decision_time"].isin(n.index)]).dropna()
+    t = score.per_period_t(ic, label_overlap(study))
+    row = {
+        "kind": "confirm",
+        "name": c.name,
+        "features": c.feature,
+        "scope": c.scope,
+        "metric": f"rank_ic x {sign:+d} on check (confirm)",
+        "bar_tune": round(bar, 3),
+        "check_used": True,
+        "t_check": round(t, 3),
+        "bar_check": round(bar, 3),
+        "gain_check": round(float(ic.mean()), 5),
+        "kept": bool(t >= bar),
+        "note": (
+            note + f" {len(ic)} periods, median {int(n.median()) if len(n) else 0} names"
+        ).strip(),
+        "mde_50": round(power["mde_50"], 5),
+        "mde_80": round(power["mde_80"], 5),
+    }
+    return reg.record(row)
+
+
 def test_candidate(
     study, frame, baseline: list[str], c: Candidate, wf=None, note: str = ""
 ) -> dict:

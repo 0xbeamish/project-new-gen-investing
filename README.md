@@ -162,7 +162,7 @@ The shipped example (30 tokens trading 24/7, planted signals) runs the same way:
 | `src/engine/market.py` | what a market plug-in must provide |
 | `src/engine/decide.py` | optional AI decider over the model's cards, with a feedback note from closed periods |
 | `src/engine/improve.py` | the feedback loop: `run_loop`, the outer step (weights), the inner step (text), the coordinator's judge and brakes |
-| `src/engine/cli.py` | the `engine` command (demo, loop, build, report, test, discover, grade-text) |
+| `src/engine/cli.py` | the `engine` command (demo, loop, build, report, test, confirm, discover, grade-text) |
 | `src/engine/text/questions.py` | question sets as YAML: typed, tagged reading / judgment, versioned |
 | `src/engine/text/read.py` | masking names, readers (keyword free; Jev, Claude paid), the cached, capped reading service |
 | `src/engine/text/source.py` | documents -> answers -> level / change / surprise inputs; history base rates |
