@@ -152,6 +152,7 @@ class Registry:
     market: str
     inherit: list[Path] = field(default_factory=list)
     check_limit: int = 30
+    planned: int = 1  # tests pre-registered as one family: each faces at least the family's bar
 
     # ---------- reading ----------
     def own(self) -> pd.DataFrame:
@@ -189,7 +190,7 @@ class Registry:
 
     def next_bar(self) -> float:
         """The t the next judged test must reach on tuning periods."""
-        return required_t(self.n_judged() + 1)
+        return required_t(max(self.n_judged() + 1, self.planned))
 
     def next_check_bar(self) -> float:
         """The t the next check-period look must reach."""

@@ -57,9 +57,8 @@ periods:                     # fixed before any result was computed
   holdout_start: "2025-01-01"
 
 registry:
-  file: data/engine/crypto/registry.csv
-  inherit: [data/registry_aggregate.csv, data/engine/us_smallcap/registry.csv,
-            data/engine/us_largecap/registry.csv]   # one shared count with every stock test
+  file: data/engine/crypto/registry.csv   # its own count (decided 2026-10-06, see the amendment)
+  planned: 3                 # the three pre-registered tests each face the bar of the third: t >= 2.394
   check_limit: 30
   holdout_unlock_log: data/engine/crypto/holdout_unlocks.csv
 
@@ -84,7 +83,7 @@ loop:
 #                         Hypothesis: NEGATIVE (post-hack drift). Sparse: expect a large MDE.
 # Each is judged against the baseline (price momentum 1/4/12 weeks, 4-week volatility, log dollar
 # volume): the statistic is the per-week gain in rank IC over the baseline, t over tuning weeks,
-# which must reach the shared registry's next bar at run time (about 3.6). A sign opposite to the
+# which must reach the registry's bar at run time (2.394 after the amendment below). A sign opposite to the
 # hypothesis is reported as such, never re-tested. fee_growth_90d is descriptive only.
 # Known weaknesses, accepted up front:
 #   - DeFiLlama revises past fees (new adapters are back-filled), so old fee values are what is known
@@ -105,3 +104,6 @@ loop:
 #     series that end before data_end.
 #   - Power, printed before any test: 117 scored weeks, baseline rank-IC sd 0.170, bar 3.626 ->
 #     MDE 0.070 at 80% power, 0.057 at 50% (UNDERPOWERED: above 0.05).
+#   - Registry, decided by the owner before any test: crypto keeps its OWN count instead of sharing
+#     the stock tests' (bar 3.626, MDE 0.070, above any edge measured so far). The three tests form
+#     one family, each judged at the Bonferroni bar for three: t >= 2.394 (MDE ~0.051 at 80% power).

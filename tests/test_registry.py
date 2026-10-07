@@ -122,3 +122,11 @@ def test_concurrent_writers_lose_no_rows(tmp_path):
     own = Registry(tmp_path / "reg.csv", "m").own()
     assert len(own) == 60 and own["name"].nunique() == 60
     assert own["test_id"].is_unique
+
+
+def test_planned_tests_all_face_the_family_bar(tmp_path):
+    from engine.registry import Registry, required_t
+
+    reg = Registry(tmp_path / "r.csv", "m", planned=3)
+    assert reg.next_bar() == pytest.approx(required_t(3))  # 2.394, not 1.96 for the first
+    assert Registry(tmp_path / "r.csv", "m").next_bar() == pytest.approx(1.96, abs=1e-3)

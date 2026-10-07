@@ -12,7 +12,8 @@ Market YAML keys (markets/us_smallcap.yaml is a full example, markets/csv_exampl
                half_life
   portfolio    long-only rules for the scorer (band / topk / periodic)
   periods      tuning [start, end), check [start, end), holdout_start
-  registry     file, inherit [other registries], check_limit, holdout_unlock_log
+  registry     file, inherit [other registries], check_limit, holdout_unlock_log, planned (the
+               number of pre-registered tests: from the first, each faces the bar of the last)
   discovery    transforms, candidates, max_tests, no_progress
   cohort_test  optional: a pre-registered long-horizon test (see CohortTest)
   spend        ledger path, caps {step: usd}, funds {provider: usd} (engine.spend)
@@ -138,6 +139,7 @@ def study_from_config(market: str, cfg: dict) -> Study:
         market,
         [path(p) for p in reg.get("inherit", [])],
         int(reg.get("check_limit", 30)),
+        int(reg.get("planned", 1)),
     )
     lock = HoldoutLock(
         path(reg.get("holdout_unlock_log", f"data/engine/{market}/holdout_unlocks.csv"))
