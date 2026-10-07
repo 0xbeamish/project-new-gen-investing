@@ -10,6 +10,7 @@
 
 Everything is fetched only through FETCH_END (2025+ stays unseen) and cached under .cache/crypto/.
     python -m engine.markets.crypto.chains fetch [coinmetrics growthepie l2beat binance wikipedia]
+    python -m engine.markets.crypto.chains fetch binance --shard 0/4   # one of 4 parallel processes
 """
 
 from __future__ import annotations
@@ -217,11 +218,13 @@ def _metrics_day(key: str) -> pd.DataFrame | None:
     return pd.DataFrame([row])
 
 
-def fetch_binance_metrics(tokens, workers: int = 16) -> None:
+def fetch_binance_metrics(tokens, workers: int = 16, shard: tuple[int, int] = (0, 1)) -> None:
+    """Daily files per perp; shard (i, n) takes every n-th perp from the i-th, so n processes can
+    split the list."""
     perps = binance.perp_symbols()
     out = DIR / "perp_metrics"
     out.mkdir(parents=True, exist_ok=True)
-    syms = sorted({p for t in tokens if (p := _perp(t, perps))})
+    syms = sorted({p for t in tokens if (p := _perp(t, perps))})[shard[0] :: shard[1]]
     _log(f"  binance metrics: {len(syms)} perps")
     for n, sym in enumerate(syms, 1):
         f = out / f"{sym}.pkl"
@@ -296,14 +299,16 @@ def series(token: str) -> dict[str, pd.Series]:
     return {k: v for k, v in out.items() if len(v)}
 
 
-def fetch(which=("coinmetrics", "growthepie", "l2beat", "wikipedia", "binance")) -> None:
+def fetch(
+    which=("coinmetrics", "growthepie", "l2beat", "wikipedia", "binance"), shard=(0, 1)
+) -> None:
     tokens = chain_tokens()
     steps = {
         "coinmetrics": lambda: fetch_coinmetrics(tokens),
         "growthepie": fetch_growthepie,
         "l2beat": fetch_l2beat,
         "wikipedia": fetch_wikipedia,
-        "binance": lambda: fetch_binance_metrics(tokens),
+        "binance": lambda: fetch_binance_metrics(tokens, shard=shard),
     }
     for w in which:
         _log(f"fetch {w}")
@@ -312,9 +317,12 @@ def fetch(which=("coinmetrics", "growthepie", "l2beat", "wikipedia", "binance"))
 
 def main() -> None:
     if sys.argv[1:2] == ["fetch"]:
-        fetch(
-            tuple(sys.argv[2:]) or ("coinmetrics", "growthepie", "l2beat", "wikipedia", "binance")
-        )
+        args, shard = sys.argv[2:], (0, 1)
+        if "--shard" in args:  # --shard i/n: this process's share of the perps
+            i = args.index("--shard")
+            shard = tuple(int(x) for x in args[i + 1].split("/"))
+            args = args[:i] + args[i + 2 :]
+        fetch(tuple(args) or ("coinmetrics", "growthepie", "l2beat", "wikipedia", "binance"), shard)
     else:
         print(__doc__)
 
