@@ -172,6 +172,7 @@ The shipped example (30 tokens trading 24/7, planted signals) runs the same way:
 | `src/engine/markets/demo.py` | one synthetic market (numbers + documents with planted signals): the demo and the tests |
 | `src/engine/markets/csv.py` | bring your own data from CSV files, no code |
 | `src/engine/markets/us_stocks/` | US small and large caps: universe, EODHD prices and measured spreads, SEC filings, insiders, 8-K text |
+| `src/engine/markets/crypto/` | the 100 most-traded Binance USDT pairs (delisted included): bars, perp funding, DeFiLlama fees and hacks; free, no keys |
 | `markets/*.yaml`, `markets/questions/` | one config per market; question sets |
 | `examples/csv/` | the CSV example's data, its question set and the script that generated it |
 | `data/registry_aggregate.csv`, `data/engine/*/registry.csv` | every judged test so far (aggregate statistics only) |

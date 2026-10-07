@@ -18,15 +18,15 @@ universe:
   exclude: [USDC, BUSD, TUSD, USDP, PAX, DAI, FDUSD, UST, USTC, SUSD, USDS, USDSB, EUR, GBP, AUD,
             BRL, TRY, PAXG, WBTC, BETH, BKRW, BIDR, IDRT, BVND, UAH, ZAR, NGN, RUB, AEUR, EURI,
             USD1, USDE, XUSD, BFUSD, RLUSD]   # stablecoins, fiat, gold, wrapped copies
-  renamed: [NPXS, BCHABC, LEND, ERD, BTT, MATIC, MC, OCEAN, AGIX, RNDR]
+  renamed: [NPXS, BCHABC, LEND, ERD, BTT, MATIC, MC, OCEAN, AGIX, RNDR, KEEP, NU, TOMO, GAL, KLAY]
   # a renamed / migrated pair ends without the delisting penalty (its last window runs to the last bar)
   gap_days: 10               # a pair with no bar for 10+ days is split: the part after the gap is a
                              #   new entity (Binance reused LUNAUSDT for a different token in 2022)
 
 costs:
   taker_fee_bps: 10          # Binance spot, per side, no discount
-  spread_days: 90            # + measured spread: mean of Abdi-Ranaldo and Corwin-Schultz over the
-                             #   last 90 daily bars before the decision
+  trade_usd: 10000           # + square-root impact per side: daily return sd x sqrt(trade / mean
+  impact_days: 30            #   daily USDT volume), both over the last 30 bars before the decision
 
 sources:
   price:
@@ -94,3 +94,14 @@ loop:
 #     judged statistic) is robust to it, portfolio returns are not.
 #   - Text (Reddit, X, governance) is not here: an AI reader remembers 2021-2024, so text is tested
 #     forward only, from data collected from now on.
+#
+# AMENDMENT 2026-10-06, after the panel was built and before any test (no candidate statistic, no
+# return of any portfolio looked at):
+#   - Costs: the measured-spread estimators (Abdi-Ranaldo, Corwin-Schultz) fail on 24/7 crypto bars
+#     (median 0 and 255 bp on the top-100 pairs, whose real spreads are a few bp). Replaced by 2 x
+#     (taker fee + square-root impact of a $10k trade): median ~46 bp round trip. Costs don't enter
+#     the judged statistic (rank IC); they set every net portfolio number.
+#   - renamed += KEEP, NU (-> T), TOMO (-> VIC), GAL (-> G), KLAY (-> KAIA), found in the list of
+#     series that end before data_end.
+#   - Power, printed before any test: 117 scored weeks, baseline rank-IC sd 0.170, bar 3.626 ->
+#     MDE 0.070 at 80% power, 0.057 at 50% (UNDERPOWERED: above 0.05).

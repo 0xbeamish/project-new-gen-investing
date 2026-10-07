@@ -75,7 +75,7 @@ report, test) is paid: `--estimate` prints the cost only.
 2. **A plug-in** when the data needs fetching or computing: a module under `src/engine/markets/`
    with `build(cfg) -> (market, {source: factory})`; sources implement `fetch` and `observations`
    (or `observations_at`). See docs/HOW_IT_WORKS.md, "Add your data"; `markets/demo.py` and
-   `markets/csv.py` are the small examples, `markets/us_stocks/` the full one.
+   `markets/csv.py` are the small examples, `markets/us_stocks/` and `markets/crypto/` full ones.
 3. Every new source gets a test like `tests/test_panel.py`: a value stamped exactly at the decision
    must not appear.
 
@@ -87,7 +87,7 @@ report, test) is paid: `--estimate` prints the cost only.
   `registry.open_check()` or `report --final` on your own. `engine test` (and `discover`, which
   runs tests) opens the check period by itself when a candidate clears the tuning bar, and each
   pass uses one of the market's rationed check-period looks. On the toy markets (demo,
-  csv_example) that is fine. On any research market (us_smallcap, us_largecap, or the user's own),
+  csv_example) that is fine. On any research market (us_smallcap, us_largecap, crypto, or the user's own),
   ask the user before running `test`, `discover` or `loop --log`.
 - **Log every judged test.** Use `engine test` / `discover` / `loop --log` (or `run.test_candidate`);
   never run a judged comparison off the books, and never delete or edit registry rows. A logged

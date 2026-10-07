@@ -3,6 +3,7 @@
 demo       one synthetic market (planted numbers + documents): runs anywhere, no data, no keys
 csv        bring your own data: prices.csv (+ signals.csv, documents.csv), no code needed
 us_stocks  US small and large caps: SEC filings, EODHD prices, Form 4, measured costs, 8-K text
+crypto     the most-traded Binance USDT pairs: bars, perp funding, DeFiLlama fees and hacks (free)
 """
 
 import importlib
