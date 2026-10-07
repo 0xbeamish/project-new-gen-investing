@@ -217,3 +217,40 @@ def test_growth_uses_volume_before_the_decision_and_dex_volume_from_the_next_day
     pd.testing.assert_series_equal(base, after)
     dex[pd.Timestamp("2021-09-29")] = 1e12  # usable at the end of 09-30: before t
     assert src.observations_at(rows).set_index("feature")["value"]["dex_volume_growth_90d"] > 1
+
+
+def test_positioning_flows_attention_count_a_day_from_the_end_of_the_next(monkeypatch):
+    m = market({"SOL": bars("2021-01-01", 300)})
+    days = pd.date_range("2021-01-01", "2021-10-31", freq="D")
+    flat = pd.Series(1e8, index=days)
+    pm = {
+        "perp_oi_usd": flat.copy(),
+        "perp_count_long_short_ratio": pd.Series(2.0, index=days),
+        "perp_sum_toptrader_long_short_ratio": pd.Series(1.5, index=days),
+        "perp_sum_taker_long_short_vol_ratio": pd.Series(1.0, index=days),
+    }
+    cm = {"cm_CapMrktEstUSD": pd.Series(1e9, index=days)}
+    monkeypatch.setattr(crypto.chains, "binance_metrics", lambda token: pm)
+    monkeypatch.setattr(crypto.chains, "coinmetrics", lambda token: cm)
+    monkeypatch.setattr(crypto.chains, "wikipedia", lambda token: {"wiki_views": flat / 1e5})
+    monkeypatch.setattr(crypto.indicators, "series", lambda token: {"chain_stables": flat.copy()})
+    t = at("2021-09-30")
+    rows = pd.DataFrame({"entity_id": ["SOL"], "decision_time": [t]})
+    srcs = [crypto.Positioning(m), crypto.Flows(m), crypto.Attention(m)]
+
+    def obs():
+        o = pd.concat([s.observations_at(rows) for s in srcs], ignore_index=True)
+        assert (o["available_at"] < t).all()
+        return o.set_index("feature")["value"]
+
+    base = obs()
+    assert base["oi_to_mcap"] == pytest.approx(np.log(0.1))
+    assert base["account_long_short_7d"] == pytest.approx(2.0)
+    assert base["oi_growth_30d"] == pytest.approx(0.0)
+    assert base["chain_stablecoins_growth_90d"] == pytest.approx(0.0)
+    assert base["wiki_views_growth_30d"] == pytest.approx(0.0)
+    for s in (pm["perp_oi_usd"], pm["perp_count_long_short_ratio"], cm["cm_CapMrktEstUSD"]):
+        s[s.index >= pd.Timestamp("2021-09-30")] *= 50  # the last closed day: usable only after t
+    pd.testing.assert_series_equal(base, obs())
+    pm["perp_oi_usd"][pd.Timestamp("2021-09-29")] *= 50  # usable at the end of 09-30, before t
+    assert obs()["oi_to_mcap"] > base["oi_to_mcap"]

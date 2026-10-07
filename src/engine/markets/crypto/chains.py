@@ -11,6 +11,7 @@
 Everything is fetched only through FETCH_END (2025+ stays unseen) and cached under .cache/crypto/.
     python -m engine.markets.crypto.chains fetch [coinmetrics growthepie l2beat binance wikipedia]
     python -m engine.markets.crypto.chains fetch binance --shard 0/4   # one of 4 parallel processes
+    python -m engine.markets.crypto.chains fetch binance coinmetrics --all-tokens   # every sector
 """
 
 from __future__ import annotations
@@ -300,9 +301,11 @@ def series(token: str) -> dict[str, pd.Series]:
 
 
 def fetch(
-    which=("coinmetrics", "growthepie", "l2beat", "wikipedia", "binance"), shard=(0, 1)
+    which=("coinmetrics", "growthepie", "l2beat", "wikipedia", "binance"),
+    shard=(0, 1),
+    every: bool = False,
 ) -> None:
-    tokens = chain_tokens()
+    tokens = indicators.sectors()["token"].tolist() if every else chain_tokens()
     steps = {
         "coinmetrics": lambda: fetch_coinmetrics(tokens),
         "growthepie": fetch_growthepie,
@@ -322,7 +325,13 @@ def main() -> None:
             i = args.index("--shard")
             shard = tuple(int(x) for x in args[i + 1].split("/"))
             args = args[:i] + args[i + 2 :]
-        fetch(tuple(args) or ("coinmetrics", "growthepie", "l2beat", "wikipedia", "binance"), shard)
+        every = "--all-tokens" in args  # every sector, not only chains (perp metrics, market caps)
+        args = [a for a in args if a != "--all-tokens"]
+        fetch(
+            tuple(args) or ("coinmetrics", "growthepie", "l2beat", "wikipedia", "binance"),
+            shard,
+            every,
+        )
     else:
         print(__doc__)
 

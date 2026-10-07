@@ -40,10 +40,19 @@ sources:
     features: [hack_usd_30d]
   growth:
     features: [px_volume_growth_90d, dex_volume_growth_90d]
+  positioning:               # added 2026-10-07: upstream of price (leverage, trader positioning)
+    features: [oi_to_mcap, oi_to_volume, oi_growth_30d, account_long_short_7d,
+               top_trader_long_short_7d, taker_buy_sell_7d]
+  flows:
+    features: [chain_stablecoins_growth_90d]
+  attention:
+    features: [wiki_views_growth_30d]
 
 features:
   baseline: [px_mom_1w, px_mom_4w, px_mom_12w, px_vol_4w, px_log_dvol]
   all: ["@baseline", funding_7d, fee_vs_price_90d, fee_growth_90d, hack_usd_30d]
+  upstream: [oi_to_mcap, oi_to_volume, oi_growth_30d, account_long_short_7d, top_trader_long_short_7d,
+             taker_buy_sell_7d, chain_stablecoins_growth_90d, wiki_views_growth_30d, funding_7d]
 
 model:
   name: ridge

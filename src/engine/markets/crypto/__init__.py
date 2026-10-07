@@ -28,6 +28,12 @@ Sources (all computed at the decision times asked for, from data usable strictly
              30 days); a hack is usable from the end of the day after it. 0 when none
   growth     px_volume_growth_90d, dex_volume_growth_90d: log(30-day sum / the 30 days ending 90
              days earlier) of USDT volume, and of DEX volume (protocol, else chain; DeFiLlama)
+  positioning  leverage and positioning from Binance perp metrics: oi_to_mcap, oi_to_volume,
+             oi_growth_30d, account_long_short_7d, top_trader_long_short_7d, taker_buy_sell_7d
+  flows      chain_stablecoins_growth_90d (chain tokens)
+  attention  wiki_views_growth_30d (tokens with an article in markets/crypto_wikipedia.csv)
+  Daily series from DeFiLlama, CoinMetrics, Binance metrics and Wikipedia count from the end of
+  the day after the day they describe
 """
 
 from __future__ import annotations
@@ -40,7 +46,7 @@ import pandas as pd
 
 from engine import data
 from engine.market import forward_returns
-from engine.markets.crypto import binance, indicators, llama
+from engine.markets.crypto import binance, chains, indicators, llama
 from engine.run import path as repo_path
 
 LEVERAGED = re.compile(r"^(.{2,})(UP|DOWN|BULL|BEAR)$")
@@ -440,6 +446,131 @@ class Growth(_Base):
         return df.assign(source=self.name)[data.OBS_COLUMNS]
 
 
+def _usable(s: pd.Series, t: pd.Timestamp, cal, data_end) -> pd.Series:
+    """The part of a daily series usable before t: a day counts from the end of the next day."""
+    if s is None or not len(s):
+        return pd.Series(dtype=float)
+    if data_end is not None:
+        s = s[s.index <= data_end]
+    usable = cal.bar_close(s.index + pd.Timedelta(days=1))
+    return s.iloc[: int(usable.searchsorted(t, side="left"))]
+
+
+def _window(s: pd.Series, end: pd.Timestamp, days: int, how: str = "mean") -> float:
+    w = s[(s.index > end - pd.Timedelta(days=days)) & (s.index <= end)].dropna()
+    if len(w) < max(1, int(days * 0.6)):
+        return np.nan
+    return float(w.sum() if how == "sum" else w.mean())
+
+
+class _Daily(_Base):
+    """Sources built from daily series known a day late; subclasses define values(token, t)."""
+
+    def stamp(self, t: pd.Timestamp, last_day: pd.Timestamp) -> pd.Timestamp:
+        return self.market.calendar.bar_close(pd.DatetimeIndex([last_day + pd.Timedelta(days=1)]))[
+            0
+        ]
+
+    def asof(self, s, t):
+        return _usable(s, t, self.market.calendar, self.market.data_end)
+
+    def observations_at(self, rows: pd.DataFrame) -> pd.DataFrame:
+        out = []
+        for e, g in rows.groupby("entity_id", sort=False):
+            token = e.split("~")[0]
+            for t in pd.DatetimeIndex(g["decision_time"].unique()):
+                for feature, (value, last_day) in self.values(token, e, t).items():
+                    if np.isfinite(value):
+                        out.append((e, self.stamp(t, last_day), feature, float(value)))
+        df = pd.DataFrame(out, columns=["entity_id", "available_at", "feature", "value"])
+        return df.assign(source=self.name)[data.OBS_COLUMNS]
+
+
+class Positioning(_Daily):
+    """Leverage and positioning from Binance perp daily metrics (end-of-day open interest, daily
+    means of the ratios): oi_to_mcap = log(open interest / market cap, CoinMetrics), oi_to_volume =
+    log(open interest / mean daily USDT spot volume over 30 days), oi_growth_30d, and 7-day means of
+    the account long/short ratio, the top-trader long/short ratio and the taker buy/sell ratio."""
+
+    name = "positioning"
+
+    def fetch(self, start, end) -> None:
+        bases = self._bases(start, end)
+        chains.fetch_binance_metrics(bases)
+        chains.fetch_coinmetrics(bases)
+
+    def values(self, token, entity, t):
+        pm = chains.binance_metrics(token)
+        cm = chains.coinmetrics(token)
+        mcap = cm.get("cm_CapMrktEstUSD", cm.get("cm_CapMrktCurUSD"))
+        out = {}
+        oi = self.asof(pm.get("perp_oi_usd"), t)
+        if len(oi):
+            d = oi.index[-1]
+            now = _window(oi, d, 3)
+            if mcap is not None:
+                mc = self.asof(mcap, t)
+                if len(mc) and now > 0:
+                    m = _window(mc, d, 3)
+                    if m > 0:
+                        out["oi_to_mcap"] = (np.log(now / m), max(d, mc.index[-1]))
+            b = self.market.series[entity]
+            qv = pd.Series(b["quote_volume"].astype(float).to_numpy(), index=b["time"])
+            v = _window(qv[qv.index <= d], d, 30)
+            if now > 0 and v > 0:
+                out["oi_to_volume"] = (np.log(now / v), d)
+            then = _window(oi, d - pd.Timedelta(days=30), 3)
+            if now > 0 and then > 0:
+                out["oi_growth_30d"] = (np.log(now / then), d)
+        for key, name in (
+            ("perp_count_long_short_ratio", "account_long_short_7d"),
+            ("perp_sum_toptrader_long_short_ratio", "top_trader_long_short_7d"),
+            ("perp_sum_taker_long_short_vol_ratio", "taker_buy_sell_7d"),
+        ):
+            s = self.asof(pm.get(key), t)
+            if len(s):
+                out[name] = (_window(s, s.index[-1], 7), s.index[-1])
+        return out
+
+
+class Flows(_Daily):
+    """chain_stablecoins_growth_90d: log(stablecoins on the token's chain, 7-day mean, now / 90 days
+    earlier), DeFiLlama; chain tokens only."""
+
+    name = "flows"
+
+    def fetch(self, start, end) -> None:
+        indicators.fetch(self._bases(start, end))
+
+    def values(self, token, entity, t):
+        s = self.asof(indicators.series(token).get("chain_stables"), t)
+        if not len(s):
+            return {}
+        d = s.index[-1]
+        a, b = _window(s, d - pd.Timedelta(days=90), 7), _window(s, d, 7)
+        ok = a > 1e6 and b > 1e6
+        return {"chain_stablecoins_growth_90d": (np.log(b / a) if ok else np.nan, d)}
+
+
+class Attention(_Daily):
+    """wiki_views_growth_30d: log(Wikipedia page views over 30 days / the 30 before); the articles in
+    markets/crypto_wikipedia.csv."""
+
+    name = "attention"
+
+    def fetch(self, start, end) -> None:
+        chains.fetch_wikipedia()
+
+    def values(self, token, entity, t):
+        s = self.asof(chains.wikipedia(token).get("wiki_views"), t)
+        if not len(s):
+            return {}
+        d = s.index[-1]
+        a = _window(s, d - pd.Timedelta(days=30), 30, "sum")
+        b = _window(s, d, 30, "sum")
+        return {"wiki_views_growth_30d": (np.log(b / a) if a > 100 and b > 100 else np.nan, d)}
+
+
 def build(cfg: dict):
     """The plug-in entry point."""
     return Crypto(cfg), {
@@ -448,4 +579,7 @@ def build(cfg: dict):
         "fees": Fees,
         "hacks": Hacks,
         "growth": Growth,
+        "positioning": Positioning,
+        "flows": Flows,
+        "attention": Attention,
     }
