@@ -58,10 +58,11 @@ def list_keys(prefix: str, folders: bool) -> list[str]:
         marker = marker[0] if marker else found[-1]
 
 
-def spot_symbols(quote: str = "USDT") -> list[str]:
-    """Every spot pair ever archived with this quote currency (delisted included), cached a day."""
+def spot_symbols(quote: str = "USDT", max_age_s: float = 86400) -> list[str]:
+    """Every spot pair ever archived with this quote currency (delisted included); the cached list
+    is refreshed when older than max_age_s (a build passes inf: no network)."""
     f = CACHE / f"spot_symbols_{quote}.txt"
-    if f.exists() and time.time() - f.stat().st_mtime < 86400:
+    if f.exists() and time.time() - f.stat().st_mtime < max_age_s:
         return f.read_text().split()
     folders = list_keys("data/spot/monthly/klines/", folders=True)
     syms = sorted({p.rstrip("/").split("/")[-1] for p in folders})
@@ -71,10 +72,10 @@ def spot_symbols(quote: str = "USDT") -> list[str]:
     return syms
 
 
-def perp_symbols() -> set[str]:
+def perp_symbols(max_age_s: float = 86400) -> set[str]:
     """Every USD-margined perp with archived funding rates."""
     f = CACHE / "perp_symbols.txt"
-    if f.exists() and time.time() - f.stat().st_mtime < 86400:
+    if f.exists() and time.time() - f.stat().st_mtime < max_age_s:
         return set(f.read_text().split())
     folders = list_keys("data/futures/um/monthly/fundingRate/", folders=True)
     syms = sorted({p.rstrip("/").split("/")[-1] for p in folders})

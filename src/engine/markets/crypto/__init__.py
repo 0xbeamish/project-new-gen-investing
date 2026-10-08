@@ -113,9 +113,9 @@ class Crypto:
         m = LEVERAGED.match(base)
         return not (m and m.group(1) in all_bases)
 
-    def pairs(self) -> list[str]:
-        """The USDT pairs to download (from the archive listing)."""
-        syms = binance.spot_symbols()
+    def pairs(self, max_age_s: float = 86400) -> list[str]:
+        """The USDT pairs to download (from the archive listing, refreshed if older than max_age_s)."""
+        syms = binance.spot_symbols(max_age_s=max_age_s)
         bases = {s[:-4] for s in syms}
         return [s for s in syms if self.keep(s[:-4], bases)]
 
@@ -132,7 +132,7 @@ class Crypto:
     def _load(self) -> None:
         series = {}
         listing = binance.CACHE / "spot_symbols_USDT.txt"
-        syms = self.pairs() if listing.exists() else []
+        syms = self.pairs(max_age_s=float("inf")) if listing.exists() else []  # no network here
         for sym in syms:
             b = binance.load("spot", sym)
             if self.data_end is not None and len(b):
