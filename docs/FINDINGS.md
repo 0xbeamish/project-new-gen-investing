@@ -291,6 +291,19 @@ The same engine on a different asset class, free data only (Binance public archi
   volume growth adds only 0.018 rank IC (t 2.0). The price baseline as a model ranks weekly winners
   well (rank IC 0.083, t 6.1, tuning) but does not pay after costs: decile spread net +0.32%/week
   (t 0.28), the long-only band net +0.06%/week (t 0.34), with 72% of its gross lost to costs.
+- **Positioning, confirmed on 2024 net of the price baseline** (pre-registration 3, cd8e394). Chain
+  exploration found that fundamentals follow price (price leads active addresses, fees and
+  stablecoins by a month) and pointed to inputs upstream of price. Two were confirmed once on 2024,
+  judged on what they add beyond momentum, volatility and dollar volume (`engine confirm --net`):
+
+  | lead | 2024 rank IC (x sign), net of price | t | bar | kept |
+  |---|---|---|---|---|
+  | `oi_to_mcap`, -: crowded perp leverage lags (median 66 names) | +0.039 | 1.89 | 2.638 | no |
+  | `account_long_short_7d`, -: retail long-heavy lags (median 71) | +0.029 | 1.65 | 2.690 | no |
+
+  Both point the predicted way, but neither clears its bar; MDE ~0.058 (underpowered by the
+  engine's rule), so the honest reading is "couldn't tell". 2024 is now spent on them; a fresh test
+  needs 2025+ (sealed) or forward paper trading.
 - **Not tested here.** Text (Reddit, X, governance proposals): an AI reader remembers 2021-2024,
   so text needs forward collection and paper trading.
 
