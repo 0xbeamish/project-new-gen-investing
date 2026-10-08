@@ -18,7 +18,8 @@
               YAML's pre-registered cohort_test. The check period opens only if tuning clears the bar
   confirm     ONE logged out-of-sample test of a candidate found by exploring the tuning years: its
               own rank IC x --sign (the pre-registered direction) on the check period ALONE, within
-              --scope; uses one check-period look and counts toward the bar
+              --scope (--net <set>: beyond that feature set); one check-period look, counts toward
+              the bar
   discover    the discovery loop: candidates from the YAML (or every feature x transform), each a
               logged test, until one is kept or a stop rule fires
   grade-text  the text eval harness on the market's eval sets: S = 0.30 A + 0.25 B + 0.30 C +
@@ -133,7 +134,8 @@ def cmd_confirm(study, args) -> None:
             "confirm needs --feature and --sign (the pre-registered direction, 1 or -1)"
         )
     c = run.Candidate(args.feature, args.transform, args.scope)
-    _print(run.confirm(study, c, args.sign, note=args.note or ""))
+    net = study.feature_set(args.net) if args.net else None
+    _print(run.confirm(study, c, args.sign, note=args.note or "", net=net))
 
 
 def cmd_loop(study, args) -> None:
@@ -391,6 +393,7 @@ def main(argv=None) -> None:
     )
     ap.add_argument("--scope", default="universal", help="test, confirm: universal or one group")
     ap.add_argument("--sign", type=int, choices=[1, -1], help="confirm: pre-registered direction")
+    ap.add_argument("--net", help="confirm: judge what the feature adds beyond this feature set")
     ap.add_argument("--decider", help="loop, report, test: none | jev | claude")
     ap.add_argument("--log", action="store_true", help="loop: record it as ONE registry test")
     ap.add_argument("--estimate", action="store_true", help="paid steps: print the cost only")

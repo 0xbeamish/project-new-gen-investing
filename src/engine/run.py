@@ -417,11 +417,27 @@ def check(study, baseline: list[str], c: Candidate, wf, grant: CheckGrant) -> di
     }
 
 
-def confirm(study, c: Candidate, sign: int, note: str = "") -> dict:
+def residualize(f: pd.DataFrame, col: str, net: list[str]) -> pd.Series:
+    """Per decision time: the rank of `col` minus its least-squares fit on the ranks of `net`
+    (missing -> the middle), i.e. what `col` says that those features don't."""
+    out = pd.Series(np.nan, index=f.index)
+    for _, g in f.groupby("decision_time"):
+        g = g.dropna(subset=[col])
+        if len(g) <= len(net) + 2:
+            continue
+        x = [np.ones(len(g))] + [g[k].rank(pct=True).fillna(0.5).to_numpy() for k in net]
+        X, y = np.column_stack(x), g[col].rank(pct=True).to_numpy()
+        b, *_ = np.linalg.lstsq(X, y, rcond=None)
+        out[g.index] = y - X @ b
+    return out
+
+
+def confirm(study, c: Candidate, sign: int, note: str = "", net: list[str] | None = None) -> dict:
     """ONE logged out-of-sample test of a candidate found by exploring the tuning years: the
     candidate's own per-period rank IC (no model), times its pre-registered sign, on the check
-    period ALONE, within its scope. Uses one check-period look; the bar is the registry's next bar
-    (it counts as a judged test). Kept if t reaches the bar."""
+    period ALONE, within its scope; with `net`, the IC of what the candidate says beyond those
+    features (residualize). Uses one check-period look; the bar is the registry's next bar (it
+    counts as a judged test). Kept if t reaches the bar."""
     if sign not in (1, -1):
         raise ValueError("sign is the pre-registered direction: 1 or -1")
     reg = study.registry
@@ -432,6 +448,8 @@ def confirm(study, c: Candidate, sign: int, note: str = "") -> dict:
     f = f.dropna(subset=["score", "fwd_return"])
     if c.scope != "universal":
         f = f[f["group"] == c.scope]
+    if net:
+        f = f.assign(score=residualize(f, "score", net)).dropna(subset=["score"])
     n = f.groupby("decision_time").size()
     n = n[n > 2]
     noise = float(np.sqrt((1 / (n - 1)).mean())) if len(n) else float("nan")
@@ -451,7 +469,8 @@ def confirm(study, c: Candidate, sign: int, note: str = "") -> dict:
         "name": c.name,
         "features": c.feature,
         "scope": c.scope,
-        "metric": f"rank_ic x {sign:+d} on check (confirm)",
+        "metric": f"rank_ic x {sign:+d} on check (confirm)"
+        + (f", net of {'+'.join(net)}" if net else ""),
         "bar_tune": round(bar, 3),
         "check_used": True,
         "t_check": round(t, 3),

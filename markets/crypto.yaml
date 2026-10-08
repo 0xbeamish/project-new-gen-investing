@@ -134,3 +134,22 @@ loop:
 #      surged underperform their sector next week. Explored: rank corr -0.08, t -1.77 (12 quarters).
 # Exploration used quarterly returns; here the horizon stays one week (52 independent weeks beat
 # 4 overlapping quarters for power; a slow signal should show up in every week).
+
+# PRE-REGISTRATION 3 (2026-10-08, committed before any 2024 row of these inputs was built): two
+# positioning leads, each `engine confirm --market crypto --feature <f> --sign -1 --net baseline`:
+# the feature's weekly rank IC on 2024 ALONE (one check look each), AFTER removing what the price
+# baseline already says (each week, the feature's rank minus its least-squares fit on the ranks of
+# px_mom_1w, px_mom_4w, px_mom_12w, px_vol_4w, px_log_dvol), against sector-adjusted next-week
+# returns, times the sign; t over the weeks of 2024. Universal scope. Bar: the registry's next bar at
+# run time (2.638, then 2.690: tests 6 and 7). Kept if t >= bar. Power at ~75 tokens a week and 52
+# weeks: MDE ~0.055 at 80%.
+#   6. oi_to_mcap, sign -1: tokens with more perp open interest relative to their market cap
+#      (crowded leverage) underperform their sector next week. Basis: chain-token exploration of
+#      2021-2023 (monthly, not logged): rank corr -0.10 (t -1.8); winners carried less leverage than
+#      losers (gap 0.41 sd); leverage and liquidation research (BIS, "DeFi leverage").
+#   7. account_long_short_7d, sign -1: when more Binance accounts are long than short (7-day mean),
+#      the token underperforms next week (retail positioning as a contrarian signal). Basis: chain
+#      exploration, level t -1.4; the ratio falls as prices rise (same month -0.36), so retail sells
+#      into rallies and buys into falls.
+# Judging net of the price baseline answers last round's lesson: the kept volume-surge lead (test 5)
+# was mostly short-term reversal and low volatility.

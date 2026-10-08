@@ -171,3 +171,11 @@ def test_confirm_judges_the_raw_feature_on_the_check_period_alone_and_counts(stu
     assert study.registry.n_judged() == 2 and study.registry.check_uses() == 2
     with pytest.raises(ValueError):
         run.confirm(study, Candidate("planted"), sign=0)
+
+
+def test_confirm_net_of_a_feature_set_removes_what_that_set_already_says(study, tuning_rows):
+    f = tuning_rows.assign(copy=tuning_rows["planted"] * 2 + 1)
+    r = run.residualize(f, "copy", ["planted"])
+    assert r.abs().max() < 1e-9  # a copy of a net feature says nothing beyond it
+    row = run.confirm(study, Candidate("planted"), sign=1, net=["noise_1"])
+    assert row["kept"] is True and "net of noise_1" in row["metric"]
