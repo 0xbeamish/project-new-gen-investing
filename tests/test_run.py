@@ -179,3 +179,17 @@ def test_confirm_net_of_a_feature_set_removes_what_that_set_already_says(study, 
     assert r.abs().max() < 1e-9  # a copy of a net feature says nothing beyond it
     row = run.confirm(study, Candidate("planted"), sign=1, net=["noise_1"])
     assert row["kept"] is True and "net of noise_1" in row["metric"]
+
+
+def test_pooled_strategy_test_logs_one_row_one_check_look_and_one_holdout_look(study):
+    row = run.pooled_strategy_test(
+        study, "planted", 1, 0.8, 0.6, pre=None, holdout_reason="unit test", note="t"
+    )
+    assert row["kind"] == "confirm" and set(row["periods"]) == {"check", "holdout"}
+    assert row["t_check"] >= row["bar_check"] and row["kept"] is True
+    assert study.registry.n_judged() == 1 and study.registry.check_uses() == 1
+    assert study.holdout.looks() == 1
+    wrong = run.pooled_strategy_test(
+        study, "planted", -1, 0.8, 0.6, pre=None, holdout_reason="unit test 2"
+    )
+    assert wrong["kept"] is False and wrong["t_check"] < 0

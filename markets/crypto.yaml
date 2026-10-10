@@ -155,3 +155,21 @@ loop:
 #      into rallies and buys into falls.
 # Judging net of the price baseline answers last round's lesson: the kept volume-surge lead (test 5)
 # was mostly short-term reversal and low volatility.
+
+# PRE-REGISTRATION 4 (2026-10-10, committed before any 2017-2020 or 2025+ bar was downloaded). ONE
+# pooled test of a rule-based strategy, approved by the owner, opening the holdout once:
+#   run.pooled_strategy_test(study, "px_vol_4w", sign=-1, enter=0.8, exit=0.4,
+#       pre=("2018-01-01", "2021-01-01"), holdout_reason=..., sources=["price"],
+#       holdout_study=<this market without data_end>)
+#   Strategy: each Monday, rank the 100-token universe (rules above) by -px_vol_4w (calmer = better)
+#   within sector (markets/crypto_sectors.csv; unlabelled tokens form "Other"); hold, equal weight,
+#   every token ranked above the 80th percentile, keep it while above the 40th; spot, long-only,
+#   costs as above (2 x (10 bp + square-root impact of $10k)). No model, no fitting.
+#   Periods (never used to choose it): 2018-01-01..2021-01-01 (before tuning), 2024 (the check
+#   period; one look), 2025-01-01 to the last complete week (the holdout; opened once, logged).
+#   Statistic: weekly net return of the book minus the equal-weight universe, pooled over the three
+#   periods (each starts from an empty book); t = mean / (sd / sqrt(weeks)).
+#   Kept if t >= the registry's next bar at run time (2.734: test 8) and the mean is positive.
+#   Chosen on 2021-2023 (descriptive): +30 bp/week net, t 1.44 over 156 weeks (sd ~260 bp/week).
+#   Power: at that effect and ~300 pooled weeks, the expected t is ~2.0, so it passes ~1 time in 4
+#   even if real; a miss means "couldn't tell", not "no effect".

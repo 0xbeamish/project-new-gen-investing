@@ -486,6 +486,82 @@ def confirm(study, c: Candidate, sign: int, note: str = "", net: list[str] | Non
     return reg.record(row)
 
 
+def pooled_strategy_test(
+    study,
+    feature: str,
+    sign: int,
+    enter: float,
+    exit: float,
+    pre: tuple[str, str] | None,
+    holdout_reason: str | None,
+    note: str = "",
+    holdout_study=None,
+    sources: list[str] | None = None,
+) -> dict:
+    """ONE logged test of a rule-based strategy (score = sign x feature; no model, so no training
+    data) on every period it was not explored on: `pre` (before the tuning years), the check
+    period, and the holdout (opened once, logged with `holdout_reason`; `holdout_study` is the same
+    market without its data_end). The book: long-only, equal weight, band within group (enter above
+    `enter`, hold while above `exit`), net of the market's costs. Statistic: the weekly net excess
+    return over the equal-weight universe, pooled over the periods (each starts from an empty
+    book), t = mean / (sd / sqrt(periods)). Kept if t reaches the registry's next bar and the mean
+    is positive. Uses one check look. `sources`: the sources to build (default all)."""
+    if sign not in (1, -1):
+        raise ValueError("sign is the pre-registered direction: 1 or -1")
+    reg = study.registry
+    bar = reg.next_bar()
+    grant = reg.open_check()
+    frames = {}
+    if pre:
+        p = panel.build(
+            study.market, study.panel_spec(pre[0], pre[1], sources), cache_dir=study.cache_dir
+        )
+        data.check_panel(p)
+        frames["pre"] = panel.model_rows(study, p)
+    frames["check"] = in_stage(
+        study,
+        panel.model_rows(study, build_panel(study, "check", grant, sources=sources)),
+        "check",
+    )
+    if holdout_reason:
+        hs = holdout_study or study
+        hs.holdout.unlock(hs.name, holdout_reason)
+        frames["holdout"] = in_stage(
+            hs,
+            panel.model_rows(hs, build_panel(hs, "holdout", final=True, sources=sources)),
+            "holdout",
+        )
+    nets, parts = [], {}
+    for name, f in frames.items():
+        f = f.assign(score=sign * f[feature]).dropna(subset=["score", "fwd_return"])
+        net = score.simulate_portfolio(score.fill_costs(f), score.Band(enter=enter, exit=exit))[
+            "net"
+        ]
+        nets.append(net)
+        parts[name] = {
+            "weeks": len(net),
+            "net_bp": round(float(net.mean()) * 1e4, 2),
+            "t": round(score.per_period_t(net), 3),
+        }
+    pooled = pd.concat(nets)
+    t = score.per_period_t(pooled)
+    row = {
+        "kind": "confirm",
+        "name": f"strategy {'+' if sign > 0 else '-'}{feature} band {enter}/{exit}",
+        "features": feature,
+        "scope": "universal",
+        "metric": "pooled net excess vs equal-weight universe per period: " + "+".join(frames),
+        "bar_tune": round(bar, 3),
+        "check_used": True,
+        "t_check": round(t, 3),
+        "bar_check": round(bar, 3),
+        "gain_check": round(float(pooled.mean()), 6),
+        "kept": bool(t >= bar and pooled.mean() > 0),
+        "note": (note + " " + str(parts)).strip(),
+    }
+    return reg.record(row) | {"periods": parts}
+
+
 def test_candidate(
     study, frame, baseline: list[str], c: Candidate, wf=None, note: str = ""
 ) -> dict:
