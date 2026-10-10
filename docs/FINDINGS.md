@@ -16,7 +16,9 @@ better: a pre-registered test of visibly inflecting fundamentals, held 36 months
 over the large-cap universe (t 0.04). On crypto (2021-2023, weekly), perp funding, DeFiLlama fee
 growth and hacks each added nothing measurable over price momentum; a trading-volume surge
 predicted underperformance out of sample (2024, t 4.2), but it is mostly short-term reversal and
-low volatility, which rank well and do not pay after costs.
+low volatility, which rank well and do not pay after costs. A calm-coin book beat the
+equal-weight universe out of sample (2018-2020, 2024, 2025-26 pooled: t 4.4) but trailed simply
+holding Bitcoin in every period.
 
 ## Why no edge so far
 
@@ -304,6 +306,27 @@ The same engine on a different asset class, free data only (Binance public archi
   Both point the predicted way, but neither clears its bar; MDE ~0.058 (underpowered by the
   engine's rule), so the honest reading is "couldn't tell". 2024 is now spent on them; a fresh test
   needs 2025+ (sealed) or forward paper trading.
+- **The low-volatility book, pooled out of sample: KEPT, but it does not beat Bitcoin**
+  (pre-registration 4, c41afc8; the holdout opened once, 2026-10-10). Chosen on 2021-2023
+  (+30 bp/week net over the equal-weight universe, t 1.44): each week, hold the calmest 20% of the
+  100-token universe within sector (keep while in the calmest 60%), spot, long-only, net of costs.
+  Judged once on every period it was not chosen on:
+
+  | period | weeks | net excess vs equal-weight universe | t | book, %/yr | BTC, %/yr | equal-weight, %/yr |
+  |---|---|---|---|---|---|---|
+  | 2018-2020 (before tuning) | 156 | +43.5 bp/wk | 2.64 | -1 | +29 | -22 |
+  | 2024 (check) | 52 | +31.8 bp/wk | 1.39 | +44 | +118 | +16 |
+  | 2025-01 to 2026-09 (holdout) | 90 | +69.2 bp/wk | 3.56 | -54 | -11 | -69 |
+  | **pooled** | 298 | **+49 bp/wk** | **4.41** (bar 2.734) | | | |
+
+  The calm book beats the average altcoin in every period, so the effect is real and persistent.
+  But the book is mostly the largest coins (BNB, BTC, ETH, TRX, LINK), and it trails simply holding
+  BTC in every period (-30, -43, -100 bp/week; t -0.5, -0.5, -1.6). The excess is "the average
+  altcoin bleeds"; capturing it needs a short leg (e.g. perps on the equal-weight basket, whose
+  costs and funding are not in this number). Diagnostics after the logged run: two stable-value
+  tokens slipped past the exclusion list in 2025-26 (U, XAUT); without them the holdout is +73 bp/wk
+  (t 3.60), so they did not drive it. Unlabelled tokens fall in sector "Other" (8% of the universe
+  in 2018-20, 45% in 2025-26).
 - **Not tested here.** Text (Reddit, X, governance proposals): an AI reader remembers 2021-2024,
   so text needs forward collection and paper trading.
 

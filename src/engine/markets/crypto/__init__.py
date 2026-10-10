@@ -50,7 +50,7 @@ from engine.markets.crypto import binance, chains, indicators, llama
 from engine.run import path as repo_path
 
 LEVERAGED = re.compile(r"^(.{2,})(UP|DOWN|BULL|BEAR)$")
-FETCH_SINCE = "2020-01"  # warm-up for 2021: 90 bars of history + 90-day features
+FETCH_SINCE = "2017-07"  # from 2018 (the pooled test) with 90 bars of warm-up; a later fetch must not drop it
 
 
 def _log(msg: str) -> None:
