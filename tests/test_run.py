@@ -193,3 +193,28 @@ def test_pooled_strategy_test_logs_one_row_one_check_look_and_one_holdout_look(s
         study, "planted", -1, 0.8, 0.6, pre=None, holdout_reason="unit test 2"
     )
     assert wrong["kept"] is False and wrong["t_check"] < 0
+
+
+def test_pooled_long_short_test_finds_planted_alpha_and_logs_one_row(study):
+    def attach(f):
+        return f.assign(listed=True, ret=f["fwd_return"], funding=0.0, side_cost=0.0005)
+
+    def bench(f):
+        return f.groupby("decision_time")["ret"].mean()
+
+    lines = []
+    row = run.pooled_long_short_test(
+        study, "planted", 1, 0.8, 0.4, attach, bench, holdout_reason="unit test", report=lines.append
+    )
+    assert lines[0].startswith("coverage") and "PRIMARY" in " ".join(lines)
+    assert [i for i, x in enumerate(lines) if x.startswith("power")] < [
+        i for i, x in enumerate(lines) if x.startswith("PRIMARY")
+    ]  # power before the primary
+    assert row["kind"] == "confirm" and row["kept"] is True and row["t_check"] >= row["bar_check"]
+    assert set(row["periods"]) == {"tuning", "check", "holdout"}
+    assert study.registry.n_judged() == 1 and study.registry.check_uses() == 1
+    assert study.holdout.looks() == 1
+    wrong = run.pooled_long_short_test(
+        study, "planted", -1, 0.8, 0.4, attach, bench, report=lines.append
+    )
+    assert wrong["kept"] is False and wrong["t_check"] < 0 and study.holdout.looks() == 1

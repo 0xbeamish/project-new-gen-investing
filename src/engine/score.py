@@ -8,6 +8,8 @@ cost as a fraction). One value per decision time, then a t-statistic over decisi
                       groups with >= min_names names; net = minus the round trips of names entering
                       each leg (long-short, group-neutral)
   rank_weighted       a long-short book over every name, weight ~ centred score rank
+  band_long_short     a dollar-neutral band book ranked across all names, with funding and forced
+                      closes (perps); ols_alpha_hc3 judges it net of a benchmark's beta
   simulate_portfolio  a long-only rule (top-k, hysteresis band, periodic) against the equal-weight
                       universe; half a round trip per buy and per sell
   per_period_t        mean / (sd / sqrt(n)), deflated by sqrt(overlap) when label windows overlap
@@ -154,6 +156,82 @@ def rank_weighted(
         turn[t] = float(traded.sum() / 2)
         prev = w
     return {"gross": pd.Series(gross), "net": pd.Series(net), "turnover": pd.Series(turn)}
+
+
+def band_long_short(
+    rows: pd.DataFrame, enter: float = 0.8, exit: float = 0.4, min_names: int = 5
+) -> pd.DataFrame:
+    """A dollar-neutral band book ranked across all rows each period (no groups): long the names above
+    `enter` (score percentile), held while above `exit`; short the mirror (below 1 - enter, held while
+    below 1 - exit). Each leg equal weight, half the capital.
+
+    rows: decision_time, entity_id, score, ret (the position's return over the period, forced closes
+    included), funding (sum of funding rates over the hold), side_cost (one-way cost, a fraction).
+    Funding: each leg's P&L includes -position x rate (long +1, short -1), sign as recorded.
+    A period with fewer than `min_names` in either leg is dropped (flagged, no return) and the book
+    restarts empty. Costs: half capital / leg size x side_cost for every name entering or leaving."""
+    d = rows.assign(
+        pl=rows.groupby("decision_time")["score"].rank(pct=True),
+        ps=(-rows["score"]).groupby(rows["decision_time"]).rank(pct=True),
+    )
+    L, S, nL0, nS0 = set(), set(), 1, 1
+    out = []
+    for t, g in d.groupby("decision_time"):
+        g = g.set_index("entity_id")
+        newL = {e for e in L if e in g.index and g.at[e, "pl"] > exit} | set(
+            g.index[g["pl"] > enter]
+        )
+        newS = {e for e in S if e in g.index and g.at[e, "ps"] > exit} | set(
+            g.index[g["ps"] > enter]
+        )
+        newS -= newL
+        row = {"decision_time": t, "n_long": len(newL), "n_short": len(newS)}
+        if min(len(newL), len(newS)) < min_names:
+            out.append(row | {"dropped": True})
+            L, S = set(), set()
+            continue
+        nL, nS = len(newL), len(newS)
+        med = g["side_cost"].median()
+        cost = sum(0.5 / nL * g["side_cost"].get(e, med) for e in newL - L)
+        cost += sum(0.5 / nL0 * g["side_cost"].get(e, med) for e in L - newL)
+        cost += sum(0.5 / nS * g["side_cost"].get(e, med) for e in newS - S)
+        cost += sum(0.5 / nS0 * g["side_cost"].get(e, med) for e in S - newS)
+        lr, sr = g.loc[list(newL), "ret"].mean(), g.loc[list(newS), "ret"].mean()
+        fund = 0.5 * -g.loc[list(newL), "funding"].fillna(0).mean()
+        fund += 0.5 * g.loc[list(newS), "funding"].fillna(0).mean()
+        gross = 0.5 * (lr - sr)
+        out.append(
+            row
+            | {
+                "dropped": False,
+                "long_ret": lr,
+                "short_ret": sr,
+                "gross": gross,
+                "funding": fund,
+                "cost": cost,
+                "net": gross + fund - cost,
+            }
+        )
+        L, S, nL0, nS0 = newL, newS, nL, nS
+    return pd.DataFrame(out).set_index("decision_time")
+
+
+def ols_alpha_hc3(y, x) -> dict:
+    """y = alpha + beta x + e by OLS; alpha's t from HC3 (heteroskedasticity-robust) errors."""
+    y, x = np.asarray(y, float), np.asarray(x, float)
+    X = np.column_stack([np.ones_like(x), x])
+    XtXi = np.linalg.inv(X.T @ X)
+    b = XtXi @ X.T @ y
+    e = y - X @ b
+    h = np.einsum("ij,jk,ik->i", X, XtXi, X)
+    cov = XtXi @ (X.T * (e / (1 - h)) ** 2) @ X @ XtXi
+    return {
+        "alpha": float(b[0]),
+        "beta": float(b[1]),
+        "t_alpha": float(b[0] / np.sqrt(cov[0, 0])),
+        "resid_sd": float(np.std(e, ddof=2)),
+        "n": len(y),
+    }
 
 
 # ---------------------------------------------------------------- long-only portfolio rules

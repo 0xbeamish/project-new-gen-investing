@@ -1,4 +1,4 @@
-"""Binance's public archive (data.binance.vision): daily spot bars and perp funding, no key.
+"""Binance's public archive (data.binance.vision): daily spot and perp bars and perp funding, no key.
 
 The archive keeps delisted pairs, so dead tokens stay in. Monthly zips are cached as one pickle
 per symbol under .cache/crypto/. Timestamps are milliseconds (microseconds from 2025 on spot).
@@ -21,6 +21,12 @@ from engine.run import path as repo_path
 BASE = "https://data.binance.vision"
 LIST = "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
 CACHE = repo_path(".cache/crypto")
+PREFIX = {
+    "spot": "data/spot/monthly/klines/",
+    "perp": "data/futures/um/monthly/klines/",  # USD-margined perp bars, same layout as spot
+    "funding": "data/futures/um/monthly/fundingRate/",
+}
+BARS = {"spot", "perp"}
 KLINE_COLS = ["open_time", "open", "high", "low", "close", "volume", "close_time", "quote_volume"]
 
 
@@ -112,11 +118,9 @@ def _fetch(kind: str, symbol: str, until: pd.Timestamp, since: str) -> str:
     stamp = out.with_suffix(".until")  # how far the last fetch looked (delisted pairs stop early)
     if out.exists() and stamp.exists() and stamp.read_text() >= until.strftime("%Y-%m"):
         return "cached"
-    prefix = (
-        "data/spot/monthly/klines/" if kind == "spot" else "data/futures/um/monthly/fundingRate/"
-    )
+    prefix = PREFIX[kind]
     keys = _months(prefix, symbol, until, since)
-    if kind == "spot":
+    if kind in BARS:
         keys = [k for k in keys if "/1d/" in k]
     parts = []
     for k in keys:
@@ -133,7 +137,7 @@ def _fetch(kind: str, symbol: str, until: pd.Timestamp, since: str) -> str:
 
 
 def _parse(kind: str, z: pd.DataFrame) -> pd.DataFrame:
-    if kind == "spot":
+    if kind in BARS:
         if z.empty:
             return pd.DataFrame(columns=["time", "open", "high", "low", "close", "quote_volume"])
         z = z.iloc[:, : len(KLINE_COLS)]
@@ -155,7 +159,7 @@ def _parse(kind: str, z: pd.DataFrame) -> pd.DataFrame:
 
 
 def fetch_all(kind: str, symbols, until: pd.Timestamp, since: str, workers: int = 16) -> None:
-    """Fill the cache for many symbols in parallel (kind: spot | funding), months since..until."""
+    """Fill the cache for many symbols in parallel (kind: spot | perp | funding), months since..until."""
     with ThreadPoolExecutor(workers) as pool:
         for i, _ in enumerate(pool.map(lambda s: _fetch(kind, s, until, since), symbols), 1):
             if i % 100 == 0 or i == len(symbols):

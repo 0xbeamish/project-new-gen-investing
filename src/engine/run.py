@@ -562,6 +562,140 @@ def pooled_strategy_test(
     return reg.record(row) | {"periods": parts}
 
 
+def pooled_long_short_test(
+    study,
+    feature: str,
+    sign: int,
+    enter: float,
+    exit: float,
+    attach,
+    benchmark,
+    min_names: int = 5,
+    pre: tuple[str, str] | None = None,
+    holdout_reason: str | None = None,
+    holdout_study=None,
+    sources: list[str] | None = None,
+    note: str = "",
+    report=print,
+) -> dict:
+    """ONE logged test of a dollar-neutral long-short band book (score = sign x feature, ranked
+    across all tradable names; score.band_long_short) on `pre`, tuning, check and holdout periods,
+    each starting from an empty book. `attach(rows)` adds listed, ret, funding, side_cost (e.g. perp
+    legs); `benchmark(rows)` gives the benchmark's return per decision time. Judged statistic: alpha
+    of the pooled weekly net return regressed on the benchmark (full-sample beta: a test statistic,
+    not a tradable hedge), t from HC3 errors; kept if t reaches the registry's next bar and alpha > 0.
+    Coverage is reported before any return; then power, the primary, secondaries and risk lines.
+    Uses one check look; opens the holdout (logged) only with `holdout_reason`."""
+    if sign not in (1, -1):
+        raise ValueError("sign is the pre-registered direction: 1 or -1")
+    reg = study.registry
+    bar = reg.next_bar()
+    grant = reg.open_check()
+    raw = {}
+    if pre:
+        p = panel.build(
+            study.market, study.panel_spec(pre[0], pre[1], sources), cache_dir=study.cache_dir
+        )
+        data.check_panel(p)
+        raw["pre"] = panel.model_rows(study, p)
+    tune = panel.model_rows(study, build_panel(study, "tuning", sources=sources))
+    raw["tuning"] = in_stage(study, tune, "tuning")
+    chk = panel.model_rows(study, build_panel(study, "check", grant, sources=sources))
+    raw["check"] = in_stage(study, chk, "check")
+    if holdout_reason:
+        hs = holdout_study or study
+        hs.holdout.unlock(hs.name, holdout_reason)
+        hold = panel.model_rows(hs, build_panel(hs, "holdout", final=True, sources=sources))
+        raw["holdout"] = in_stage(hs, hold, "holdout")
+    frames, bench = {}, {}
+    for name, f in raw.items():
+        f = score.fill_costs(f.assign(score=sign * f[feature]).dropna(subset=["score"]))
+        f = attach(f)
+        bench[name] = benchmark(f)
+        frames[name] = f[f["listed"] & f["ret"].notna()]
+    cov = pd.concat(
+        [
+            f.assign(year=f["decision_time"].dt.year)
+            .groupby(["year", "decision_time"])["score"]
+            .agg(names="size")
+            .reset_index()
+            .groupby("year")["names"]
+            .agg(weeks="size", median_names="median", min_names="min")
+            for f in frames.values()
+        ]
+    )
+    report(f"coverage (tradable names per decision, before any return):\n{cov.to_string()}")
+    books = {n: score.band_long_short(f, enter, exit, min_names) for n, f in frames.items()}
+    dropped = pd.concat([b["dropped"] for b in books.values()])
+    report(
+        f"dropped (< {min_names} names in a leg) by year: "
+        f"{dropped.groupby(dropped.index.year).sum().astype(int).to_dict()}"
+    )
+    kept_w = {
+        n: b[~b["dropped"]].join(bench[n].rename("bench"), how="inner") for n, b in books.items()
+    }
+    pooled = pd.concat(kept_w.values()).dropna(subset=["net", "bench"])
+    fit = score.ols_alpha_hc3(pooled["net"], pooled["bench"])
+    m50, m80 = (score.mde(fit["resid_sd"], fit["n"], bar, q) for q in (0.5, 0.8))
+    report(
+        f"power: residual sd {fit['resid_sd'] * 1e4:.0f} bp/period over {fit['n']} periods, bar "
+        f"{bar:.3f}: MDE {m50 * 1e4:.0f} bp at 50% power, {m80 * 1e4:.0f} bp at 80%"
+    )
+    kept = bool(fit["t_alpha"] >= bar and fit["alpha"] > 0)
+    report(
+        f"PRIMARY alpha vs benchmark: {fit['alpha'] * 1e4:+.1f} bp/period, HC3 t "
+        f"{fit['t_alpha']:.2f} (bar {bar:.3f}), beta {fit['beta']:.2f} -> "
+        f"{'KEPT' if kept else 'not kept'}"
+    )
+    ex = score.ols_alpha_hc3(pooled["net"] - pooled["funding"], pooled["bench"])
+    per = {}
+    for n, w in kept_w.items():
+        w = w.dropna(subset=["net", "bench"])
+        a = score.ols_alpha_hc3(w["net"], w["bench"]) if len(w) > 3 else {}
+        per[n] = {
+            "periods": len(w),
+            "alpha_bp": round(a.get("alpha", np.nan) * 1e4, 1),
+            "t_hc3": round(a.get("t_alpha", np.nan), 2),
+            "beta": round(a.get("beta", np.nan), 2),
+            "dollar_neutral_bp": round(float(w["net"].mean()) * 1e4, 1),
+            "dollar_neutral_t": round(score.per_period_t(w["net"]), 2),
+        }
+    wealth = (1 + pooled["net"]).cumprod()
+    secondary = {
+        "dollar_neutral_bp": round(float(pooled["net"].mean()) * 1e4, 1),
+        "dollar_neutral_t": round(score.per_period_t(pooled["net"]), 2),
+        "alpha_ex_funding_bp": round(ex["alpha"] * 1e4, 1),
+        "alpha_ex_funding_t": round(ex["t_alpha"], 2),
+        "carry": bool(ex["alpha"] < fit["alpha"] / 2),
+        "gross_bp": round(float(pooled["gross"].mean()) * 1e4, 1),
+        "funding_bp": round(float(pooled["funding"].mean()) * 1e4, 1),
+        "cost_bp": round(float(pooled["cost"].mean()) * 1e4, 1),
+        "worst_period_bp": round(float(pooled["net"].min()) * 1e4, 1),
+        "max_drawdown": round(float((wealth / wealth.cummax() - 1).min()), 3),
+        "short_leg_over_30pct": int((pooled["short_ret"] > 0.30).sum()),
+    }
+    report(f"secondary: {secondary}")
+    report("per period:\n" + pd.DataFrame(per).T.to_string())
+    report("not modelled: squeezes, liquidations, margin calls, position limits, perp-spot basis")
+    row = {
+        "kind": "confirm",
+        "name": f"long-short {'+' if sign > 0 else '-'}{feature} band {enter}/{exit}",
+        "features": feature,
+        "scope": "universal",
+        "metric": "pooled long-short alpha vs benchmark (HC3): " + "+".join(frames),
+        "bar_tune": round(bar, 3),
+        "check_used": True,
+        "t_check": round(fit["t_alpha"], 3),
+        "bar_check": round(bar, 3),
+        "gain_check": round(fit["alpha"], 6),
+        "kept": kept,
+        "note": (note + " " + str({"beta": round(fit["beta"], 3), **secondary})).strip(),
+        "mde_50": round(m50, 5),
+        "mde_80": round(m80, 5),
+    }
+    return reg.record(row) | {"periods": per, "secondary": secondary, "coverage": cov}
+
+
 def test_candidate(
     study, frame, baseline: list[str], c: Candidate, wf=None, note: str = ""
 ) -> dict:
