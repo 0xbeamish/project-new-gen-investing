@@ -625,6 +625,9 @@ def pooled_long_short_test(
         ]
     )
     report(f"coverage (tradable names per decision, before any return):\n{cov.to_string()}")
+    empty = [n for n, f in frames.items() if f.empty]
+    if empty:  # stop before any return: a period with no tradable names is a data gap, not a result
+        raise ValueError(f"no tradable names in {empty}: fill the data first")
     books = {n: score.band_long_short(f, enter, exit, min_names) for n, f in frames.items()}
     dropped = pd.concat([b["dropped"] for b in books.values()])
     report(

@@ -204,7 +204,15 @@ def test_pooled_long_short_test_finds_planted_alpha_and_logs_one_row(study):
 
     lines = []
     row = run.pooled_long_short_test(
-        study, "planted", 1, 0.8, 0.4, attach, bench, holdout_reason="unit test", report=lines.append
+        study,
+        "planted",
+        1,
+        0.8,
+        0.4,
+        attach,
+        bench,
+        holdout_reason="unit test",
+        report=lines.append,
     )
     assert lines[0].startswith("coverage") and "PRIMARY" in " ".join(lines)
     assert [i for i, x in enumerate(lines) if x.startswith("power")] < [
@@ -218,3 +226,22 @@ def test_pooled_long_short_test_finds_planted_alpha_and_logs_one_row(study):
         study, "planted", -1, 0.8, 0.4, attach, bench, report=lines.append
     )
     assert wrong["kept"] is False and wrong["t_check"] < 0 and study.holdout.looks() == 1
+
+
+def test_pooled_long_short_test_stops_before_any_return_on_an_empty_period(study):
+    def attach(f):  # nothing tradable in the check period
+        listed = f["decision_time"] < pd.Timestamp(study.periods.check[0], tz="UTC")
+        return f.assign(listed=listed, ret=f["fwd_return"], funding=0.0, side_cost=0.0005)
+
+    with pytest.raises(ValueError, match="no tradable names"):
+        run.pooled_long_short_test(
+            study,
+            "planted",
+            1,
+            0.8,
+            0.4,
+            attach,
+            lambda f: f.groupby("decision_time")["ret"].mean(),
+            report=lambda s: None,
+        )
+    assert study.registry.n_judged() == 0
