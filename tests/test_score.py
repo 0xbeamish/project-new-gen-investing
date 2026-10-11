@@ -221,9 +221,19 @@ def _ls_rows(n_t=60, n=40, signal=0.02, seed=0):
         s = rng.normal(size=n)
         mkt = rng.normal(0, 0.05)
         ret = mkt * (1 + 0.5 * (s < 0)) + signal * s + rng.normal(0, 0.03, n)
-        rows.append(pd.DataFrame({"decision_time": d, "entity_id": [f"T{i}" for i in range(n)],
-                                  "score": s, "ret": ret, "funding": 0.0, "side_cost": 0.001,
-                                  "mkt": mkt}))
+        rows.append(
+            pd.DataFrame(
+                {
+                    "decision_time": d,
+                    "entity_id": [f"T{i}" for i in range(n)],
+                    "score": s,
+                    "ret": ret,
+                    "funding": 0.0,
+                    "side_cost": 0.001,
+                    "mkt": mkt,
+                }
+            )
+        )
     return pd.concat(rows, ignore_index=True)
 
 
@@ -231,10 +241,13 @@ def test_band_long_short_finds_a_planted_signal_and_alpha_hc3_judges_it():
     rows = _ls_rows()
     book = score.band_long_short(rows, 0.8, 0.4, min_names=5)
     assert not book["dropped"].any() and (book["n_long"] >= 8).all()
+    assert book["turn_long"].between(0, 1).all() and book["turn_long"].iloc[0] == 0.5  # from empty
     bench = rows.groupby("decision_time")["mkt"].first()
     fit = score.ols_alpha_hc3(book["net"], bench.reindex(book.index))
     assert fit["alpha"] > 0 and fit["t_alpha"] > 5
-    assert fit["beta"] < 0  # the short leg (low score) carries more market: the book is net short beta
+    assert (
+        fit["beta"] < 0
+    )  # the short leg (low score) carries more market: the book is net short beta
     null = score.band_long_short(_ls_rows(signal=0.0, seed=1), 0.8, 0.4)
     nfit = score.ols_alpha_hc3(null["net"], bench.reindex(null.index))
     assert abs(nfit["t_alpha"]) < 3 and null["cost"].mean() > 0
@@ -245,7 +258,9 @@ def test_band_long_short_funding_sign_follows_the_recorded_rate():
     rows["ret"] = 0.0
     neg = score.band_long_short(rows.assign(funding=-0.001), 0.8, 0.4)  # shorts pay longs
     pos = score.band_long_short(rows.assign(funding=0.001), 0.8, 0.4)  # longs pay shorts
-    assert np.allclose(neg["funding"], 0.0) and np.allclose(pos["funding"], 0.0)  # same rate both legs
+    assert np.allclose(neg["funding"], 0.0) and np.allclose(
+        pos["funding"], 0.0
+    )  # same rate both legs
     one = rows.assign(funding=np.where(rows["score"] > 0, -0.002, 0.0))  # only the long side has it
     b = score.band_long_short(one, 0.8, 0.4)
     assert (b["funding"] > 0).all()  # long + negative rate: the long receives (-(+1) x -0.002)

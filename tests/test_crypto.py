@@ -262,7 +262,9 @@ def test_perp_attach_forced_close_listing_and_negative_funding():
     days = pd.date_range("2024-01-01", periods=20, freq="D")
     bars = {
         "AAAUSDT": pd.DataFrame({"time": days, "close": np.linspace(100, 119, 20)}),
-        "BBBUSDT": pd.DataFrame({"time": days[:10], "close": np.linspace(10, 19, 10)}),  # dies day 10
+        "BBBUSDT": pd.DataFrame(
+            {"time": days[:10], "close": np.linspace(10, 19, 10)}
+        ),  # dies day 10
     }
     ft = pd.date_range("2024-01-01", periods=60, freq="8h", tz="UTC")
     fund = {
@@ -270,13 +272,18 @@ def test_perp_attach_forced_close_listing_and_negative_funding():
         "BBBUSDT": pd.DataFrame({"time": ft[:30], "rate": 0.0002}),
     }
     close = lambda d: pd.Timestamp(d, tz="UTC") + pd.Timedelta(hours=23, minutes=59)
-    rows = pd.DataFrame({
-        "entity_id": ["AAA", "BBB", "CCC", "BBB"],
-        "decision_time": [pd.Timestamp(d, tz="UTC") for d in ("2024-01-08", "2024-01-08", "2024-01-08", "2024-01-15")],
-        "entry_time": [close("2024-01-08")] * 3 + [close("2024-01-15")],
-        "label_end": [close("2024-01-15")] * 3 + [close("2024-01-22")],
-        "rt_cost": 0.0030,
-    })
+    rows = pd.DataFrame(
+        {
+            "entity_id": ["AAA", "BBB", "CCC", "BBB"],
+            "decision_time": [
+                pd.Timestamp(d, tz="UTC")
+                for d in ("2024-01-08", "2024-01-08", "2024-01-08", "2024-01-15")
+            ],
+            "entry_time": [close("2024-01-08")] * 3 + [close("2024-01-15")],
+            "label_end": [close("2024-01-15")] * 3 + [close("2024-01-22")],
+            "rt_cost": 0.0030,
+        }
+    )
     out = perps.attach(rows, bars=bars.get, funding=fund.get, listed={"AAAUSDT", "BBBUSDT"})
     a, b, c, b2 = out.itertuples()
     assert a.listed and np.isclose(a.ret, 114 / 107 - 1)

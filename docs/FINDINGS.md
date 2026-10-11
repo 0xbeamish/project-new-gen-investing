@@ -19,7 +19,8 @@ predicted underperformance out of sample (2024, t 4.2), but it is mostly short-t
 low volatility, which rank well and do not pay after costs. A calm-coin book beat the
 equal-weight universe out of sample (2018-2020, 2024, 2025-26 pooled: t 4.4) but trailed simply
 holding Bitcoin in every period, and on inspection it rests on the 2025-26 crash (calmer coins fell
-less), not on a persistent low-volatility premium.
+less), not on a persistent low-volatility premium. Hedged on perps and judged net of Bitcoin, the same volatility spread
+earns +28 bp/week (t 1.66), short of its bar, and only in 2024-2026.
 
 ## Why no edge so far
 
@@ -344,6 +345,38 @@ The same engine on a different asset class, free data only (Binance public archi
   Provenance: singletons.py. 2024 diagnostic cells use the gated frame (panel from 2021-01-01, data_end); an
   earlier 2024-only frame shifted the start week. 2025-26 was re-read outside the gate for this diagnostic
   (recorded in holdout_unlocks.csv).
+- **The low-volatility spread on perps, net of Bitcoin: NOT kept** (pre-registration 5, dc5f105,
+  amended e3b924b; crypto-0009, 2026-10-11). Every date had been seen before, so this is weaker
+  evidence; it asks the question test 8 never asked (excess net of BTC beta). Each Monday, rank the
+  perp-listed top-100 by 4-week volatility across the universe; long the calmest 20% (held while in
+  the calmest 60%), short the most volatile 20% (mirror), half the capital per leg, Binance USD-M
+  perps, net of taker fees, square-root impact and funding. Statistic: alpha of the weekly net return
+  regressed on BTC's perp return, HC3 t, pooled 2020-01 to 2026-09 (343 weeks; 7 thin weeks of 2020
+  dropped). The first attempt stopped before any return (the funding cache ended 2024-12); both
+  holdout unlocks are logged.
+
+  | period | weeks | alpha vs BTC | HC3 t | dollar-neutral net |
+  |---|---|---|---|---|
+  | 2020 | 45 | +9.7 bp/wk | 0.14 | +26.4 bp/wk |
+  | 2021-2023 | 156 | +3.7 bp/wk | 0.13 | -1.3 bp/wk |
+  | 2024 | 52 | +57.2 bp/wk | 1.77 | +52.2 bp/wk |
+  | 2025-01 to 2026-09 | 90 | +48.4 bp/wk | 2.49 | +49.0 bp/wk |
+  | **pooled** | 343 | **+28.1 bp/wk** | **1.66** (bar 2.773) | +23.6 bp/wk (t 1.36) |
+
+  - Beta to BTC is about zero (-0.05): both legs move with BTC almost one for one (long leg 1.03,
+    short leg 1.12; their weekly returns correlate 0.78-0.94 by period).
+  - Before funding, the volatility spread is +39.6 bp/wk; funding costs the book 11.4 bp/wk, about a
+    third. Funding is a real cost of holding it, so the judged number is the one after funding.
+  - Costs are small because the band trades little: one-way turnover 7% (long) and 12% (short) of
+    each leg a week; costs 4.2 bp/wk, 11% of gross.
+  - Risk: worst week -18.1%, maximum drawdown -34%, 5 weeks in which the short leg rose more than
+    30%. Squeezes, liquidations, margin calls, position limits and the perp-spot basis are not modelled.
+  - The effect appears only in 2024-2026 (t 1.77, 2.49), the same dates on which test 8's excess
+    concentrated, and those dates have now been read for test 8, its diagnostics and this test. The data
+    cannot separate "a low-volatility premium since 2024" from "a regime".
+  - Power: residual sd 319 bp/wk. Telling a true +28 bp/wk from zero at t 2 takes about
+    (2 x 319 / 28)^2 = 520 weeks (10 years) of fresh data, and about 19 years at the 2.773 bar. Forward
+    collection cannot settle this rule on any useful horizon, so it is not a reason to start collecting.
 - **Not tested here.** Text (Reddit, X, governance proposals): an AI reader remembers 2021-2024,
   so text needs forward collection and paper trading.
 

@@ -220,6 +220,7 @@ def test_pooled_long_short_test_finds_planted_alpha_and_logs_one_row(study):
     ]  # power before the primary
     assert row["kind"] == "confirm" and row["kept"] is True and row["t_check"] >= row["bar_check"]
     assert set(row["periods"]) == {"tuning", "check", "holdout"}
+    assert {"net", "bench", "long_ret", "turn_long"} <= set(row["books"].columns)
     assert study.registry.n_judged() == 1 and study.registry.check_uses() == 1
     assert study.holdout.looks() == 1
     wrong = run.pooled_long_short_test(

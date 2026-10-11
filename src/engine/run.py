@@ -696,7 +696,12 @@ def pooled_long_short_test(
         "mde_50": round(m50, 5),
         "mde_80": round(m80, 5),
     }
-    return reg.record(row) | {"periods": per, "secondary": secondary, "coverage": cov}
+    return reg.record(row) | {
+        "periods": per,
+        "secondary": secondary,
+        "coverage": cov,
+        "books": pooled,  # the weekly book behind every number, for later descriptive lines
+    }
 
 
 def test_candidate(

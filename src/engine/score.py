@@ -200,6 +200,8 @@ def band_long_short(
         fund = 0.5 * -g.loc[list(newL), "funding"].fillna(0).mean()
         fund += 0.5 * g.loc[list(newS), "funding"].fillna(0).mean()
         gross = 0.5 * (lr - sr)
+        turn_l = 0.5 * (len(newL - L) / nL + len(L - newL) / nL0)  # one-way, share of the leg
+        turn_s = 0.5 * (len(newS - S) / nS + len(S - newS) / nS0)
         out.append(
             row
             | {
@@ -209,6 +211,8 @@ def band_long_short(
                 "gross": gross,
                 "funding": fund,
                 "cost": cost,
+                "turn_long": turn_l,
+                "turn_short": turn_s,
                 "net": gross + fund - cost,
             }
         )
