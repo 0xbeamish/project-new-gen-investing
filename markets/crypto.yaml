@@ -244,3 +244,9 @@ loop:
 #   | 250 | 38 | 50 |
 #   The run prints the realized residual sd and power before the alpha line. Unless beta absorbs most of the
 #   variance, an alpha below ~70-90 bp/wk reads as "couldn't tell", not "no edge".
+# AMENDMENT to pre-registration 5 (2026-10-11, before any perp kline was fetched or any return computed):
+#   "entry open to exit close, same timing as the labels" was self-contradictory: the labels run close
+#   to close (first daily close after the decision -> close `horizon` bars later). The perp legs use the
+#   label timing: perp close on the entry date -> perp close on the label_end date (or the last close
+#   before it, if the perp stops). Pre-2021 frame: pre=("2020-01-01", "2021-01-01"); each period starts
+#   from an empty book, as in test 8. The 2024 frame comes through the gate (one check look).
