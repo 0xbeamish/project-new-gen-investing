@@ -173,3 +173,74 @@ loop:
 #   Chosen on 2021-2023 (descriptive): +30 bp/week net, t 1.44 over 156 weeks (sd ~260 bp/week).
 #   Power: at that effect and ~300 pooled weeks, the expected t is ~2.0, so it passes ~1 time in 4
 #   even if real; a miss means "couldn't tell", not "no effect".
+
+# PRE-REGISTRATION 5 (2026-10-11, committed before any perp kline was fetched; v3 as reviewed). ONE long-short
+# low-vol test on Binance USDT-M perps. Run: run.pooled_long_short_test (to be built, with tests).
+# WEAKER EVIDENCE: every date has been seen.
+#   Motivated by the test-8 diagnostic: test 8's excess is not beta-adjusted; this alpha is the question it never asked.
+#
+# Already known before writing this (exploratory, spot prices as perp proxy, not logged; 2021-2023 unless noted):
+#   - tradable.py: 108 variants; best low-vol long-short +37 bp/wk (t 0.91).
+#   - combo.py: low-vol long-short, WITHIN SECTOR 0.8/0.4, dollar-neutral: +0.2 bp/wk (t 0.01); its raw return
+#     minus BTC (beta forced to 1): -62 bp/wk (t -0.74).
+#   - test 8: the long-only calm book vs equal-weight universe, and BTC / equal-weight %/yr, for all periods.
+#   - singletons.py (2026-10-10, test-8 diagnostic, descriptive): the long-only calm book ranked ACROSS the
+#     universe (spot, all names, not perp-restricted) vs equal-weight: 2018-20 -7.9 bp/wk (t -0.28), 2024 +75.9
+#     (t 1.74), 2025-26 +120.5 (t 5.49). That is close to this test's LONG leg on most of its dates.
+#   - No universe-wide LONG-SHORT run exists: tradable.py ranks within (decision_time, group) for all 108
+#     variants (line 60; top_liquid filters names, ranking stays within sector); combo.py likewise.
+#   NO run ever regressed a long-short return on BTC (grep of scratch scripts and session history), so the
+#   PRIMARY statistic below is unseen, but partly inferable: alpha ~ mean_LS - beta x mean_BTC. Over 2021-23
+#   mean_LS ~0 and BTC's mean ~+62 bp/wk are known, and a low-minus-high-vol book has beta < 0 almost by
+#   construction, so the 2021-23 alpha is predictably about |beta| x 62 bp/wk, positive. A pass that rests on
+#   2021-23 is therefore mostly this arithmetic; the per-period line below shows whether it does.
+#
+# Universe: each Monday 00:00 UTC, the top-100 universe restricted to tokens with a USDT-M perp listed at the
+#   decision time (first funding record <= decision time <= last funding record).
+#
+# Rule: rank -px_vol_4w ACROSS the perp-listed universe (not within sector; see coverage below).
+#   Long: above the 80th percentile, held while above the 40th.
+#   Short: below the 20th, held while below the 60th.
+#   Pure vol, no other inputs, no fitting. Differs from the explored within-sector rule.
+#
+# Coverage, counted before any return (2020-2023 only; no labels read):
+#   within sector, a lone name gets rank(pct=True) = 1.0, the top of whatever is ranked (the count ranked +vol,
+#   so singletons landed in the short count; ranking -vol puts them in the long leg). Either way the legs were
+#   lopsided (median 22 vs 9) and 44 of 52 weeks of 2020 fell below N. Across the universe the legs balance:
+#     | year | weeks | median perp-listed | median short | median long | weeks dropped (N=5) |
+#     | 2020 |  52   | 28.5 |  6 |  5 | 21 |
+#     | 2021 |  52   | 80   | 16 | 15 |  0 |
+#     | 2022 |  52   | 77   | 16 | 15 |  0 |
+#     | 2023 |  52   | 90   | 18 | 17 |  0 |
+#   2024+ counts are printed by the run script BEFORE it reads any return, and appended here as an amendment.
+#   N = 5 per leg; weeks below it are dropped and counted.
+#
+# Returns: perp 1d klines (um/monthly/klines, to be fetched), entry open to exit close, same timing as labels.
+#   A perp that stops trading mid-week closes at its last close; never dropped.
+#   Funding: each leg's P&L includes -position x rate per 8h record, sign as recorded (long = +1, short = -1);
+#   unit test with a negative-rate day.
+# Costs, both legs: 2 x (5 bp taker + square-root impact of $10k on spot 30-day dollar volume).
+# Sizing: equal weight within each leg, half the capital per leg (dollar-neutral).
+#
+# Periods: 2020-01-06 to the last complete week, pooled. Re-reading 2025+ goes through holdout.unlock again,
+#   logged, and needs Akhil's yes.
+#
+# PRIMARY (judged): alpha = intercept of OLS of weekly net long-short return on BTC's weekly perp return,
+#   same weeks, full-sample beta; t from HC3 standard errors. Kept if t >= the registry's next bar AT RUN TIME
+#   (2.773 at 8 judged; read via registry.next_bar()) and alpha > 0. One registry row either way.
+#   Full-sample beta uses look-ahead: fine as a test statistic, NOT a tradable hedge. If kept, a
+#   trailing-beta-hedged version is a separate, later test.
+# Secondary (not judged): dollar-neutral mean and t; alpha with funding removed (below half the full alpha =
+#   labelled funding carry); gross, costs and funding as separate lines; alpha and HC3 t PER PERIOD
+#   (2020, 2021-23, 2024, 2025-26), each with its own full-period beta.
+# Risk: worst week, max drawdown, weeks where the short leg rose > 30%.
+#   Not modelled: squeezes, liquidations, margin, position limits, basis.
+#
+# Power, fixed before running: residual sd after the BTC regression is NOT estimated here (that would reveal the
+#   2021-23 alpha). Weeks ~329 (21 of 2020 dropped). HC3 will widen these slightly.
+#   | residual sd (bp/wk) | MDE 50% power | MDE 80% power |
+#   | 450 (beta explains nothing) | 69 | 90 |
+#   | 350 | 54 | 70 |
+#   | 250 | 38 | 50 |
+#   The run prints the realized residual sd and power before the alpha line. Unless beta absorbs most of the
+#   variance, an alpha below ~70-90 bp/wk reads as "couldn't tell", not "no edge".
