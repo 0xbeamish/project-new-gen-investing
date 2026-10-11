@@ -18,7 +18,8 @@ growth and hacks each added nothing measurable over price momentum; a trading-vo
 predicted underperformance out of sample (2024, t 4.2), but it is mostly short-term reversal and
 low volatility, which rank well and do not pay after costs. A calm-coin book beat the
 equal-weight universe out of sample (2018-2020, 2024, 2025-26 pooled: t 4.4) but trailed simply
-holding Bitcoin in every period.
+holding Bitcoin in every period, and on inspection it rests on the 2025-26 crash (calmer coins fell
+less), not on a persistent low-volatility premium.
 
 ## Why no edge so far
 
@@ -319,7 +320,7 @@ The same engine on a different asset class, free data only (Binance public archi
   | 2025-01 to 2026-09 (holdout) | 90 | +69.2 bp/wk | 3.56 | -54 | -11 | -69 |
   | **pooled** | 298 | **+49 bp/wk** | **4.41** (bar 2.734) | | | |
 
-  The calm book beats the average altcoin in every period, so the effect is real and persistent.
+  The calm book beat the average altcoin in each period as logged (but see the correction below).
   But the book is mostly the largest coins (BNB, BTC, ETH, TRX, LINK), and it trails simply holding
   BTC in every period (-30, -43, -100 bp/week; t -0.5, -0.5, -1.6). The excess is "the average
   altcoin bleeds"; capturing it needs a short leg (e.g. perps on the equal-weight basket, whose
@@ -327,6 +328,22 @@ The same engine on a different asset class, free data only (Binance public archi
   tokens slipped past the exclusion list in 2025-26 (U, XAUT); without them the holdout is +73 bp/wk
   (t 3.60), so they did not drive it. Unlabelled tokens fall in sector "Other" (8% of the universe
   in 2018-20, 45% in 2025-26).
+- **Correction (2026-10-10; descriptive diagnostics after the logged run; the registry row stands as logged).**
+  "Beats the average altcoin in every period, so the effect is real and persistent" overstates it. Test 8
+  measures excess over the equal-weight universe and is not beta-adjusted.
+  (1) About half the 2018-20 excess came from one-token sectors, which a within-sector rank always holds (a
+  lone name ranks 1.0). Without sectors under 5 names, 2018-20 is +26 bp/wk (t 1.06) and 2024 +23 (t 0.87);
+  pooled t 2.79 (descriptive, not a judged test), carried by 2025-26.
+  (2) Ranking across the universe instead of within sector turns 2018-20 to -8 bp/wk.
+  (3) What survives is 2025-26 (+72 bp/wk, t 3.2), a crash in which the equal-weight universe fell 69%/yr.
+  Best reading: calmer, likely lower-beta coins fell less in a crash, plus small sectors held regardless of
+  volatility in 2018-20; not a persistent low-volatility premium. The book's beta was not measured; alpha
+  after BTC beta (pre-registration 5) is the statistic that would test it.
+  Design flaw for any within-sector band rule: every sector contributes its top name, so small sectors are
+  over-held (a singleton always, a 2-name sector half the time).
+  Provenance: singletons.py. 2024 diagnostic cells use the gated frame (panel from 2021-01-01, data_end); an
+  earlier 2024-only frame shifted the start week. 2025-26 was re-read outside the gate for this diagnostic
+  (recorded in holdout_unlocks.csv).
 - **Not tested here.** Text (Reddit, X, governance proposals): an AI reader remembers 2021-2024,
   so text needs forward collection and paper trading.
 

@@ -1,2 +1,4 @@
 timestamp,commit,args
 2026-10-10T21:39Z,c41afc8,"engine crypto: pooled test of the low-volatility book (pre-registration 4, c41afc8), approved by the owner 2026-10-10"
+2026-10-11T04:02Z,0adc06c,"engine crypto: descriptive re-read, not judged: test-8 diagnostics (U/XAUT exclusion; BTC and equal-weight %/yr), read 2025+ via panel.build without data_end, earlier on 2026-10-10, not recorded at the time"
+2026-10-11T04:02Z,0adc06c,"engine crypto: descriptive re-read, not judged: test-8 sector-size diagnostic (singletons.py), read 2025+ via panel.build without data_end, 2026-10-10"
