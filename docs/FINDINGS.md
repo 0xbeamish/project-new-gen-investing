@@ -67,6 +67,21 @@ especially proprietary text that the market hasn't already read.
 9. **LLM readers see masked text** (company names hidden) and are never asked about outcomes.
 10. **Pre-register** the rule, the sample and the bar before the first return is computed.
 
+**Calibration on real data (crypto 2021-2023, 2026-10-12; not a judged test).** Placebos are random
+inputs (also persistent ones, like a slow real input) with no link to returns; plants add an effect of
+known size. Each instrument is the engine's own code.
+
+| instrument | placebo passes at t 1.96 (expect 5%) | placebo passes at the bar (2.9) | plant found at MDE50 / MDE80 (expect 50% / 80%) |
+|---|---|---|---|
+| input rank IC (tests 1-7) | 4.7% iid, 3.7% persistent (N 300 each) | 0 of 600 | 49% / 80% (N 200) |
+| long-short book, alpha vs BTC, HC3 (tests 8-9) | 6.4% (N 1000) | 0 of 1000 | 27% / 50% (N 100); expected 24% / 44% at the alpha that reached the book |
+| Jev pick scorer (tests 10-14) | 5.3% (N 2000) | not run | 46% / 81% (N 500) |
+
+The book is slightly liberal at 1.96 (6.4%), harmless at the bars used. A per-token premium reaches
+the band book about 25% smaller (it holds names outside the top half), so its MDE in per-token terms is
+about a third larger than printed. Not covered: whether the source data match reality, whether costs
+are right, and the stock markets.
+
 ## The measured-cost lesson
 
 Assumed costs flattered everything. Effective spreads measured from daily high/low/close
