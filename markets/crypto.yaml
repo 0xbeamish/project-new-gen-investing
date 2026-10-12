@@ -250,3 +250,35 @@ loop:
 #   label timing: perp close on the entry date -> perp close on the label_end date (or the last close
 #   before it, if the perp stops). Pre-2021 frame: pre=("2020-01-01", "2021-01-01"); each period starts
 #   from an empty book, as in test 8. The 2024 frame comes through the gate (one check look).
+#
+# PRE-REGISTRATION 6 (2026-10-12, before any Jev call on these sets): Jev (jev-1.13.0, TypeSafe) picks
+#   from 5 anonymized tokens. Five variants, ONE family: each is judged against required_t(9 + 5) = 2.91.
+#   Asked by Akhil after a 5-set demo (0 of 5 winners; descriptive, not logged). TUNING YEARS ONLY.
+# Sets: scratchpad jevfam_sets.py, numpy default_rng(20261013): 2000 sets, each a uniformly drawn decision
+#   week in 2021-07-05..2023-11-27 (126 weeks) and 5 distinct tokens from that week's universe with a known
+#   next-week return. The SAME 2000 sets for every variant. Names, dates and price levels hidden.
+# Variants (one Jev Choice call per set per variant, letters A-E):
+#   V0 full:   all 19 inputs, each with a plain definition, value and percentile in that week's universe.
+#              "Which token will have the highest price return over the next 7 days?"
+#   V1 plain:  same question; each available input as one word bucket by percentile (very low <=20, low
+#              <=40, middle <=60, high <=80, very high), missing inputs omitted.
+#   V2 note:   V0 cards plus a track record: each input's mean weekly rank IC with next-week return over
+#              weeks whose label ended by the decision (2021-01 onward; walk-forward), with t, in words.
+#              No token names, no returns of any set.
+#   V3 avoid:  V0 cards; "which token will have the LOWEST price return over the next 7 days?"
+#   V4 month:  V0 cards; "highest price return over the next 4 weeks?" Labels: the market's own builder
+#              with horizon 28 bars (same entry and delisting rule).
+# PRIMARY per variant (judged; Jev's pick = its highest-probability letter):
+#   V0-V2, V4: mean over sets of (pick return - the set's average return). V3: mean of (set average -
+#   avoided token's return). t clusters by decision week (V4: by 8-week block, horizons overlap).
+#   Kept if t >= 2.91 and the mean > 0. Five registry rows (kind test), kept or not.
+# Secondary (not judged): hit rate vs 20%; mean rank of pick; free comparisons on the same sets (lowest
+#   px_vol_4w; an IC-weighted score from the V2 note); calibration: hit rate by Jev's top probability
+#   (<0.4, 0.4-0.7, 0.7-0.9, >=0.9). Returns spot close to close, before costs (~46 bp round trip).
+# Power (random-pick sd from the sets, before any call): 1 week sd 10.5%, SE 0.25%, MDE 0.74% (50%) /
+#   0.96% (80%); 4 weeks sd 22.0%, SE 0.29%, MDE 0.86% / 1.11%. For scale: an input with the engine's best
+#   rank IC (0.083) would earn ~1%/wk picking 1 of 5, so only an edge at least that good is detectable.
+# Already known: every input's IC on these years (combo.py, descriptive); the 5-set demo. Unseen: any Jev
+#   answer on these sets. Jev is not trained on customer requests (docs.typesafe.ai/models), and each call
+#   is stateless, so answers in one variant cannot inform another.
+# Budget: ledger step jev_decider; ~10,000 calls, ~$1.5 projected; the run stops itself above $3.
