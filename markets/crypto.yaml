@@ -282,3 +282,5 @@ loop:
 #   answer on these sets. Jev is not trained on customer requests (docs.typesafe.ai/models), and each call
 #   is stateless, so answers in one variant cannot inform another.
 # Budget: ledger step jev_decider; ~10,000 calls, ~$1.5 projected; the run stops itself above $3.
+# AMENDMENT to pre-registration 6 (2026-10-12, before any call): V1 shows hack_usd_30d = 0 as "none" rather than
+#   its tied percentile bucket ("middle"). Nothing else changes.
