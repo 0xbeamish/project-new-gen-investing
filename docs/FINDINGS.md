@@ -20,7 +20,8 @@ low volatility, which rank well and do not pay after costs. A calm-coin book bea
 equal-weight universe out of sample (2018-2020, 2024, 2025-26 pooled: t 4.4) but trailed simply
 holding Bitcoin in every period, and on inspection it rests on the 2025-26 crash (calmer coins fell
 less), not on a persistent low-volatility premium. Hedged on perps and judged net of Bitcoin, the same volatility spread
-earns +28 bp/week (t 1.66), short of its bar, and only in 2024-2026.
+earns +28 bp/week (t 1.66), short of its bar, and only in 2024-2026. Asked to pick the best of 5
+anonymized tokens from the same inputs (2000 sets, five variants), Jev did no better than chance.
 
 ## Why no edge so far
 
@@ -377,6 +378,26 @@ The same engine on a different asset class, free data only (Binance public archi
   - Power: residual sd 319 bp/wk. Telling a true +28 bp/wk from zero at t 2 takes about
     (2 x 319 / 28)^2 = 520 weeks (10 years) of fresh data, and about 19 years at the 2.773 bar. Forward
     collection cannot settle this rule on any useful horizon, so it is not a reason to start collecting.
+- **Tests 10-14: Jev picks 1 of 5 tokens (pre-registration 6, 2026-10-12): none kept.** Jev
+  (jev-1.13.0) saw 5 anonymized tokens (names, dates and prices hidden) with all 19 inputs and picked
+  one; 2000 fixed sets from 2021-07 to 2023-11, the same sets for five variants, one family (bar 2.91).
+  Score: pick minus the set's average return, before costs; random = 0, picking the actual winner
+  every time = +12.85%. Jev is not trained on customer requests and each call is stateless.
+
+  | variant | gain per set | t | hit rate (random 20%) |
+  |---|---|---|---|
+  | V0 all inputs, numbers and percentiles | -0.12% | -0.35 | 21.9% |
+  | V1 inputs as plain words | -0.38% | -1.20 | 22.1% |
+  | V2 plus each input's walk-forward track record | -0.07% | -0.26 | 19.9% |
+  | V3 avoid the worst (gain from avoiding) | -0.20% | -0.50 | 21.1% |
+  | V4 best over 4 weeks | -1.37% | -1.91 | 20.3% |
+
+  - Jev's confidence means nothing: in V0, picks it gave 90%+ hit 25% of the time, those at 40-70% hit 23%.
+  - Free rules on the same sets did no better: the calmest token -0.12% (t -0.42), an IC-weighted score
+    from the same track record -0.09% (t -0.36). The calmest token beats the set's median by 1.23%
+    and ranks 2.84 of 5 on average, but misses the rare huge winners, so it doesn't beat the average.
+  - Power: a 0.96%/set edge (1 week) would have been found 80% of the time; an input as good as the
+    engine's best (rank IC 0.083) would earn about 1%. Cost $1.44 for 10,000 calls.
 - **Not tested here.** Text (Reddit, X, governance proposals): an AI reader remembers 2021-2024,
   so text needs forward collection and paper trading.
 
