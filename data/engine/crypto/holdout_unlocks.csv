@@ -5,3 +5,4 @@ timestamp,commit,args
 2026-10-11T04:35Z,e3b924b,"engine crypto: pre-registration 5 (dc5f105, amended e3b924b): long-short low-vol alpha vs BTC on perps, approved by the owner 2026-10-11"
 2026-10-11T04:49Z,2f359ef,"engine crypto: pre-registration 5 (dc5f105, amended e3b924b): long-short low-vol alpha vs BTC on perps, approved by the owner 2026-10-11; second attempt: the first (04:35Z) stopped after the coverage print, before any return, because the funding cache ended 2024-12"
 2026-10-11T04:51Z,150feae,"engine crypto: descriptive re-read, not judged: crypto-0009 turnover and per-leg beta lines (prereg5_lines.py), 2026-10-11"
+2026-10-14T19:29Z,dcc5ae5,"engine crypto: pre-registration 7 (dcc5ae5): trend book vs BTC, test 15; approved by the owner 2026-10-13/14"

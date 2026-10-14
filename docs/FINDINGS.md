@@ -438,6 +438,31 @@ The same engine on a different asset class, free data only (Binance public archi
     printed MDEs about 1.3-1.5x too small, so tests 6-7 (2024) could only have seen an IC near 0.08.
   - **No logged verdict changes on tuning data,** and none is re-judged here. Tests 4-9 used 2024 or the
     holdout; re-scoring them is a correction and needs the owner's yes.
+- **Tests 15-16: trend book vs BTC, and Jev as its judge (pre-registration 7, dcc5ae5, 2026-10-14): neither
+  kept.**
+  - **The book:** each Monday, the top 20 liquid coins, each held in proportion to how many of its
+    28/56/112/224-day price changes are up and sized to 50%/yr volatility, the rest in cash. Over 442
+    weeks, 2018-04 to 2026-09, with costs and the holdout re-read (logged).
+  - **Primary:** alpha vs BTC +2.1%/yr, t 0.34 (HC3 0.36, Newey-West 0.34), beta 0.28, bar 2.935. Power
+    had been stated beforehand: it needs an alpha information ratio near 1.0 for even odds.
+
+  | weekly, net | CAGR | vol | Sharpe | max drawdown |
+  |---|---|---|---|---|
+  | trend book (27% invested on average) | 13.6% | 24% | 0.65 | -35% |
+  | BTC held | 34.0% | 60% | 0.79 | -75% |
+  | equal-weight hold of the same coins (gross) | -9.3% | 83% | 0.30 | -95% |
+  | variant, BTC+ETH only (descriptive) | 36.3% | 32% | 1.12 | -34% |
+  | variant, no vol scaling (descriptive) | 9.0% | 53% | 0.43 | -77% |
+
+  - What trend does here is cut risk, not add return. The book loses about a third as much as BTC in each
+    crash, and gives up most of the gain in between. Only 2025-26 (book -7%/yr, BTC -8%/yr) was a down
+    period for both.
+  - The BTC+ETH-only variant matched BTC's return with less than half its drawdown: alpha t 2.18. It is
+    descriptive, chosen after the primary, and below the bar. It is the line worth watching, not a result.
+  - **Test 16, Jev:** Jev saw each coin-week's anonymized card (8,128 calls, $0.16) and set the share to
+    hold. It copied the rule's stated exposure on every card (correlation 1.00, zero overrides of 50+
+    points). Book difference -0.1 bp/wk, t -1.41, bar 2.955. Shown the rule's answer, Jev defers to it;
+    this test could not see any judgment of its own.
 - **Not tested here.** Text (Reddit, X, governance proposals): an AI reader remembers 2021-2024,
   so text needs forward collection and paper trading.
 
