@@ -348,3 +348,23 @@ loop:
 #   - Memorization: Jev may guess the regime from a deep drawdown, but it can't see the date, the name or
 #     the next week. It is stateless and not trained on customer calls.
 # Order: commit this -> holdout log row -> test 15 -> Jev calls -> test 16. Both are logged whatever the result.
+
+# PRE-REGISTRATION 8 (2026-10-14, committed before any call; the owner said "yes run the fair jev test").
+# ONE logged test (test 17), the fair version of test 16. Test 16's card showed the rule's exposure, and
+# Jev copied it on all 8,128 cards (correlation 1.00), so that test measured nothing of Jev's own.
+#   - Card: test 16's 8,128 cards with the line "The trend rule says: hold X% ..." removed. Nothing else
+#     changes: the same anonymized inputs (% change over 28/56/112/224 days, 60-day vol, drawdown from
+#     the 1-year high), and no name, date or rule.
+#   - Question, levels and scoring are unchanged: Jev's probability-weighted level / 4 replaces the
+#     rule's exposure. Sizing, D, costs and weeks are test 15's (2018-04-02 .. 2026-09, 442 weeks).
+#   - PRIMARY (as test 16): weekly net return of the Jev book minus the rule book. t = the smaller of iid
+#     and Newey-West (auto). Kept if t >= the registry's next bar at run time (2.974 now) and the mean > 0.
+#     The power limits are test 15's.
+#   - Secondary: correlation of Jev's exposure with the rule's, average exposures, overrides of >= 50
+#     points and the next-week return of those coin-weeks, the Jev book's alpha vs BTC (HC3/Newey-West),
+#     and each book per period.
+#   - Already known: tests 15-16 (the rule book's returns; Jev copies a stated rule). The inputs on the
+#     card include the 4 lookbacks, so Jev could rebuild the rule if it wanted to.
+#   - Data: the 2025+ weeks are re-read (a holdout log row first), and it counts one check look.
+#   - Budget: 8,128 calls, ~$0.16 at test 16's measured rate. The run stops itself above $1
+#     (step jev_decider: $5.50 of $10 spent).
