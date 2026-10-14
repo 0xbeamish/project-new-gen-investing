@@ -413,6 +413,31 @@ The same engine on a different asset class, free data only (Binance public archi
     and ranks 2.84 of 5 on average, but misses the rare huge winners, so it doesn't beat the average.
   - Power: a 0.96%/set edge (1 week) would have been found 80% of the time; an input as good as the
     engine's best (rank IC 0.083) would earn about 1%. Cost $1.44 for 10,000 calls.
+- **Engine fixes for crypto (2026-10-13), before/after on the tuning years only (descriptive).**
+  A code review and a literature review asked whether the engine overstates crypto results. Four changes:
+  1. **Market beta removed:** each coin's 90-day beta to the equal-weight market, shrunk toward 1, times
+     the market's move is taken out of the return that the IC and model target use (`beta_adjust`).
+     P&L still uses raw returns.
+  2. **Streaky weeks:** every t is now at most its Newey-West t (`t_stat_lags: auto`, 4 lags).
+  3. **Honest power for `confirm`:** noise is the candidate's own IC sd on tuning weeks, not the null
+     1/sqrt(N-1).
+  4. **funding_7d per day:** the 37% of perps paying every 4h by 2024 were read at half their funding.
+
+  | weekly rank IC, 2021-23 | raw returns | beta-adjusted | t iid -> Newey-West (adj.) |
+  |---|---|---|---|
+  | px_mom_1w (reversal) | -0.057 | -0.062 | -5.99 -> -5.63 |
+  | px_mom_4w | -0.050 | -0.058 | -5.08 -> -5.08 |
+  | px_vol_4w (low vol) | -0.081 | -0.077 | -6.58 -> -6.58 |
+  | px_log_dvol | -0.018 | -0.017 | -1.69 -> -1.67 |
+  | funding_7d (per day) | +0.004 | -0.001 | -0.09 -> -0.09 |
+
+  - **Low vol is not just low beta:** its IC barely changes once beta is removed. Beta and 4-week
+    volatility rank-correlate only 0.38.
+  - **Streaks barely matter for weekly ICs in 2021-23:** the t-stats hardly move.
+  - **Power was overstated:** the real weekly IC sd is 0.13-0.16, against the null 0.10. Confirm tests
+    printed MDEs about 1.3-1.5x too small, so tests 6-7 (2024) could only have seen an IC near 0.08.
+  - **No logged verdict changes on tuning data,** and none is re-judged here. Tests 4-9 used 2024 or the
+    holdout; re-scoring them is a correction and needs the owner's yes.
 - **Not tested here.** Text (Reddit, X, governance proposals): an AI reader remembers 2021-2024,
   so text needs forward collection and paper trading.
 

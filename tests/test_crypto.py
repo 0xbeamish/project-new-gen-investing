@@ -140,8 +140,27 @@ def test_funding_ignores_settlements_at_or_after_the_decision(monkeypatch, tmp_p
     monkeypatch.setattr(binance, "load", lambda kind, sym: f)
     rows = pd.DataFrame({"entity_id": ["BTC"], "decision_time": [t]})
     obs = crypto.Funding(m).observations_at(rows)
-    assert obs["value"].iloc[0] == pytest.approx(0.0001)
+    assert obs["value"].iloc[0] == pytest.approx(0.0003)  # 3 settlements a day
     assert (obs["available_at"] < t).all()
+
+
+def test_funding_is_per_day_whatever_the_settlement_interval(monkeypatch, tmp_path):
+    m = market({"AAA": bars("2021-01-01", 200), "BBB": bars("2021-01-01", 200, seed=2)})
+    t = at("2021-06-29")
+    every = {"AAAUSDT": "8h", "BBBUSDT": "4h"}
+    per = {"AAAUSDT": 0.0001, "BBBUSDT": 0.00005}  # the same 0.0003 a day
+    monkeypatch.setattr(binance, "CACHE", tmp_path)
+    (tmp_path / "perp_symbols.txt").write_text("AAAUSDT BBBUSDT")
+
+    def load(kind, sym):
+        times = pd.date_range(t - pd.Timedelta(days=10), t, freq=every[sym], inclusive="left")
+        return pd.DataFrame({"time": times, "rate": per[sym]})
+
+    monkeypatch.setattr(binance, "load", load)
+    rows = pd.DataFrame({"entity_id": ["AAA", "BBB"], "decision_time": [t, t]})
+    obs = crypto.Funding(m).observations_at(rows).set_index("entity_id")["value"]
+    assert obs["AAA"] == pytest.approx(0.0003)
+    assert obs["BBB"] == pytest.approx(0.0003)
 
 
 def test_fees_are_usable_only_from_the_end_of_the_next_day(monkeypatch):
@@ -292,3 +311,30 @@ def test_perp_attach_forced_close_listing_and_negative_funding():
     assert not c.listed and np.isnan(c.ret)  # no perp
     assert not b2.listed  # delisted before this decision
     assert np.isclose(out["side_cost"].iloc[0], 0.0005 + 0.0005)
+
+
+def test_beta_recovers_a_planted_market_exposure_from_past_bars_only():
+    rng = np.random.default_rng(5)
+    n = 200
+    mkt = rng.normal(0, 0.03, n)
+    t0 = pd.Timestamp("2021-01-01")
+
+    def coin(beta, seed):
+        r = beta * mkt + np.random.default_rng(seed).normal(0, 0.005, n)
+        b = bars("2021-01-01", n)
+        b["close"] = 100 * np.exp(np.cumsum(r))
+        return b
+
+    m = market({"HI": coin(2.0, 1), "LO": coin(0.5, 2), "MID": coin(1.0, 3)})
+    m.top = 3
+    m._volume_table()
+    t = at("2021-06-29")
+    rows = pd.DataFrame({"entity_id": ["HI", "LO", "MID"], "decision_time": [t] * 3})
+    b = m.betas(rows)
+    raw = (b - (1 - m.beta_shrink)) / m.beta_shrink  # undo the shrink
+    avg = (2.0 + 0.5 + 1.0) / 3  # the market is their equal-weight mean
+    assert raw.tolist() == pytest.approx([2.0 / avg, 0.5 / avg, 1.0 / avg], abs=0.05)
+    s = m._series["HI"]
+    s.loc[s["time"] >= t0 + pd.Timedelta(days=180), "close"] *= 50  # later bars: no effect
+    m._volume_table()
+    assert m.betas(rows).tolist() == pytest.approx(b.tolist())

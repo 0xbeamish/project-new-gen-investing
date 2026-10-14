@@ -6,10 +6,13 @@ data_end: "2024-12-31"       # bars, fees, funding and hacks after this are neve
 
 calendar: {kind: continuous, close: "23:59", decide_after_close: 1min}   # Binance daily bars close 23:59:59 UTC
 schedule: weekly             # decisions Monday 00:00 UTC
+t_stat_lags: auto            # added 2026-10-13: every t is at most its Newey-West t (bull/bear streaks)
 labels:
   horizon: 7                 # one week of daily bars
   ended_if_no_bar_for_days: 10
   delisted_return: -0.30     # added to a window cut short by delisting (as for stocks)
+  beta_adjust: {days: 90, shrink: 0.667}   # added 2026-10-13: IC and model target use the return
+                             #   minus beta x the market's (equal weight) move; books keep raw returns
 
 universe:
   top: 100                   # by mean daily USDT volume over the last 30 bars before the decision

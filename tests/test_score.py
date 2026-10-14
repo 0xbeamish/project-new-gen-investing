@@ -275,3 +275,36 @@ def test_band_long_short_drops_thin_periods_and_restarts_empty():
     b = score.band_long_short(rows, 0.8, 0.4, min_names=5)
     assert b["dropped"].tolist() == [False, True, False, False]
     assert b["net"].isna().iloc[1]
+
+
+def test_newey_west_lags_only_ever_lower_a_t_and_raise_the_noise():
+    rng = np.random.default_rng(3)
+    smooth = pd.Series(np.convolve(rng.normal(0.05, 1, 400), np.ones(8) / 8, "valid"))
+    iid = score.per_period_t(smooth)
+    assert score.per_period_t(smooth, lags="auto") < 0.6 * iid
+    assert score.per_period_t(smooth, lags=0) == iid
+    assert score.nw_lags(104, "auto") == 4
+    assert score.long_run_sd(smooth, "auto") > 1.5 * smooth.std()
+    flip = pd.Series(np.tile([1.0, -0.8], 100))  # negative autocorrelation: t is not raised
+    assert score.per_period_t(flip, lags="auto") == pytest.approx(score.per_period_t(flip))
+    assert score.long_run_sd(flip, "auto") == pytest.approx(flip.std())
+
+
+def test_rank_ic_uses_the_beta_adjusted_return_when_present():
+    from engine import panel
+
+    t = pd.Timestamp("2024-01-01", tz="UTC")
+    beta = pd.Series([2.0, 1.5, 0.5, 0.0])  # mean 1: the market is their equal-weight mean
+    idio = np.array([-0.02, -0.01, 0.01, 0.02])  # what the score really predicts
+    f = pd.DataFrame(
+        {
+            "decision_time": [t] * 4,
+            "group": ["g"] * 4,
+            "fwd_return": beta.to_numpy() * 0.10 + idio,  # an up week: high beta wins
+            "score": [1.0, 2.0, 3.0, 4.0],
+        }
+    )
+    assert score.rank_ic(f).iloc[0] == pytest.approx(-1.0)
+    x = panel.add_beta_excess(f, beta)
+    assert x["fwd_excess"].tolist() == pytest.approx(idio.tolist())
+    assert score.rank_ic(x).iloc[0] == pytest.approx(1.0)

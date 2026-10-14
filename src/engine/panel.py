@@ -252,7 +252,16 @@ def model_rows(study, p: Panel) -> pd.DataFrame:
     f = usable_rows(p.frame)
     if lab.get("winsorize"):
         f = winsorize(f, "fwd_return", tuple(lab["winsorize"]))
+    if lab.get("beta_adjust") and hasattr(study.market, "betas"):
+        f = add_beta_excess(f, study.market.betas(f))
     within = study.cfg["model"].get("target", {}).get("within", "group")
-    f = add_rank_target(f, within)
+    f = add_rank_target(f, within, "fwd_excess" if "fwd_excess" in f else "fwd_return")
     f["rt_cost"] = study.market.cost_bps(f) / 1e4
     return f
+
+
+def add_beta_excess(frame: pd.DataFrame, beta: pd.Series) -> pd.DataFrame:
+    """fwd_excess: the forward return minus beta x the decision time's equal-weight mean forward
+    return. What a signal must predict beyond the market's move; P&L still uses fwd_return."""
+    mkt = frame.groupby("decision_time")["fwd_return"].transform("mean")
+    return frame.assign(beta=beta, fwd_excess=frame["fwd_return"] - beta * mkt)

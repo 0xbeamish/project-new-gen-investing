@@ -20,7 +20,8 @@ Market
 Sources (all computed at the decision times asked for, from data usable strictly before them)
   price      px_mom_1w / 4w / 12w (7, 28, 84 bars), px_vol_4w (daily return sd), px_log_dvol
              (log mean daily USDT volume, 28 bars)
-  funding    funding_7d: mean funding rate of the token's USDT perp over the last 7 days
+  funding    funding_7d: the token's USDT perp funding over the last 7 days, per day (4h and
+             8h settlement intervals on one scale)
   fees       fee_growth_90d: log(fees over the latest 30 usable days / the 30 days ending 90 days
              earlier); fee_vs_price_90d: that minus the log price change over the same 90 days.
              A day's fees are usable from the end of the next day
@@ -90,6 +91,8 @@ class Crypto:
         self.fee_bps = float(c.get("taker_fee_bps", 10))
         self.trade_usd = float(c.get("trade_usd", 10000))
         self.impact_days = int(c.get("impact_days", 30))
+        b = lab.get("beta_adjust") or {}
+        self.beta_days, self.beta_shrink = int(b.get("days", 90)), float(b.get("shrink", 2 / 3))
         self.data_end = pd.Timestamp(cfg["data_end"]) if cfg.get("data_end") else None
         sectors = u.get("sectors")  # token -> group (sector); returns are then sector-adjusted
         self.sector = (
@@ -155,6 +158,7 @@ class Crypto:
         """Mean USDT volume over the last volume_days bars and bars listed, by date x entity."""
         if not self._series:
             self.vol, self.hist = pd.DataFrame(), pd.DataFrame()
+            self.logret, self.mkt = pd.DataFrame(), pd.Series(dtype=float)
             return
         qv = pd.DataFrame(
             {e: s.set_index("time")["quote_volume"] for e, s in self._series.items()}
@@ -166,6 +170,14 @@ class Crypto:
         pos = np.where(has.to_numpy(), np.arange(len(has))[:, None], np.nan)
         self.last_bar = pd.DataFrame(pos, index=has.index, columns=has.columns).ffill()
         self.bar_closes = self.calendar.bar_close(qv.index)
+        closes = pd.DataFrame(
+            {e: s.set_index("time")["close"].astype(float) for e, s in self._series.items()}
+        ).sort_index()
+        self.logret = np.log(closes.asfreq("D")).diff()
+        # the market each day: equal weight over the names the universe rule held the day before
+        prev_vol = self.vol.where(self.hist >= self.min_history).shift(1)
+        member = prev_vol.rank(axis=1, ascending=False, method="first") <= self.top
+        self.mkt = self.logret.where(member).mean(axis=1)
 
     # ---------- the contract ----------
     def universe(self, as_of: pd.Timestamp) -> pd.DataFrame:
@@ -222,6 +234,33 @@ class Crypto:
                 sd, adv = np.std(np.diff(lc[i - n - 1 : i]), ddof=1), np.nanmean(qv[i - n : i])
                 if adv > 0:
                     out[idx] = 2 * (self.fee_bps + 1e4 * sd * np.sqrt(self.trade_usd / adv))
+        return out
+
+    def betas(self, rows: pd.DataFrame) -> pd.Series:
+        """Each row's beta to the equal-weight market, from the last beta_days daily log returns
+        closed before the decision (at least a third of them), shrunk toward 1 (Blume): crypto
+        names share one big common factor, and a calm coin is mostly a low-beta coin."""
+        out = pd.Series(1.0, index=rows.index)
+        if self.logret.empty:
+            return out
+        k, need = self.beta_days, max(10, self.beta_days // 3)
+        for t, g in rows.groupby("decision_time", sort=False):
+            i = int(self.bar_closes.searchsorted(t, side="left"))  # bars [i-k, i) closed before t
+            if i < need:
+                continue
+            m = self.mkt.iloc[max(0, i - k) : i]
+            r = self.logret.iloc[max(0, i - k) : i].reindex(columns=g["entity_id"].unique())
+            ok = r.notna() & m.notna().to_numpy()[:, None]
+            x = m.to_numpy()[:, None]
+            xm = np.where(ok, x, np.nan)
+            dx = xm - np.nanmean(xm, axis=0)
+            dy = r.where(ok).to_numpy() - np.nanmean(r.where(ok).to_numpy(), axis=0)
+            with np.errstate(invalid="ignore", divide="ignore"):
+                beta = np.nansum(dx * dy, axis=0) / np.nansum(dx * dx, axis=0)
+            beta = np.where(ok.sum().to_numpy() >= need, beta, np.nan)
+            b = pd.Series(beta, index=r.columns)
+            b = self.beta_shrink * b + (1 - self.beta_shrink)
+            out[g.index] = g["entity_id"].map(b).fillna(1.0).to_numpy()
         return out
 
     def ever_in_universe(self, start, end, schedule: str = "weekly") -> list[str]:
@@ -289,6 +328,11 @@ class Funding(_Base):
 
     name = "funding"
 
+    @property
+    def cache_key(self) -> dict:
+        """Panel caches key on code changes too: v2 = per day (2026-10-13), v1 = per settlement."""
+        return {"params": self.params, "version": 2}
+
     def perp(self, base: str, perps: set[str]) -> str | None:
         for p in (f"{base}USDT", f"1000{base}USDT"):
             if p in perps:
@@ -316,9 +360,14 @@ class Funding(_Base):
             rate = f["rate"].to_numpy(float)
             for t in pd.DatetimeIndex(g["decision_time"].unique()):
                 lo, hi = ft.searchsorted(t - pd.Timedelta(days=7)), ft.searchsorted(t, side="left")
-                if hi - lo < 7:  # at least ~a third of the week's settlements
+                if hi - lo < 3:
                     continue
-                out.append((e, ft[hi - 1], "funding_7d", float(np.nanmean(rate[lo:hi]))))
+                gaps = np.diff(ft[lo - 1 if lo else lo : hi]).astype("m8[s]").astype(float)
+                step = np.median(gaps)
+                days = step / 86400  # settlement interval: 8h, or 4h/1h for many perps since 2023
+                if not days > 0 or (hi - lo) * days < 7 / 3:  # at least a third of the week covered
+                    continue
+                out.append((e, ft[hi - 1], "funding_7d", float(np.nanmean(rate[lo:hi])) / days))
         df = pd.DataFrame(out, columns=["entity_id", "available_at", "feature", "value"])
         return df.assign(source=self.name)[data.OBS_COLUMNS]
 

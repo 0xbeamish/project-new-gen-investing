@@ -290,7 +290,7 @@ def frozen_scores(study, rows: pd.DataFrame, features: list[str]) -> pd.DataFram
         model=model.ridge(float(m.get("alpha", 10.0))),
         block="year",
         min_train_periods=int(m.get("min_train_periods", 12)),
-        keep=("group", "fwd_return", "rt_cost"),
+        keep=("group", "fwd_return", "fwd_excess", "rt_cost"),
     )
     return wf.run(rows, features, study.market.calendar)[0]
 
@@ -631,7 +631,7 @@ class Coordinator:
                 model=model.ridge(c.alpha),
                 block=self.cfg.block,
                 min_train_periods=int(m.get("min_train_periods", 12)),
-                keep=("group", "fwd_return", "rt_cost"),
+                keep=("group", "fwd_return", "fwd_excess", "rt_cost"),
                 half_life=c.half_life,
             )
             scored, w = wf.run(enc, cols, self.cal)

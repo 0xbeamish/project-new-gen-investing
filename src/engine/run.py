@@ -199,7 +199,7 @@ def walk_forward(study: Study, factory=None) -> model.WalkForward:
         block=m.get("block", "year"),
         min_train_periods=int(m.get("min_train_periods", 12)),
         embargo=pd.Timedelta(days=int(m.get("embargo_days", 0))),
-        keep=("group", "fwd_return", "rt_cost"),
+        keep=("group", "fwd_return", "fwd_excess", "rt_cost"),
         half_life=m.get("half_life"),
     )
 
@@ -227,6 +227,16 @@ def label_overlap(study: Study) -> int:
     return score.overlap(int(study.cfg["labels"]["horizon"]), per)
 
 
+def t_lags(study: Study) -> int | str:
+    """The market's Newey-West lags for every t (0 = off; "auto" = floor(4 (n/100)^(2/9)))."""
+    return study.cfg.get("t_stat_lags", 0)
+
+
+def period_t(study: Study, series, overlap: bool = True) -> float:
+    """t of a per-period series under the market's rules: label overlap and Newey-West lags."""
+    return score.per_period_t(series, label_overlap(study) if overlap else 1, t_lags(study))
+
+
 def periods_per_year(study: Study) -> int:
     """Decisions a year, for annual turnover (pandas-frequency schedules count as monthly)."""
     continuous = getattr(study.market.calendar, "kind", "trading") == "continuous"
@@ -242,6 +252,7 @@ def evaluate(study: Study, scored: pd.DataFrame, stage: str = "tuning") -> dict:
         portfolio_rules(study),
         periods_per_year=periods_per_year(study),
         overlap_n=label_overlap(study),
+        lags=t_lags(study),
     )
 
 
@@ -316,7 +327,7 @@ def _ic_noise(study, frame, base, scope: str, wf) -> tuple[float, int, str]:
     if base is not None:
         b = base if scope == "universal" else base[base["group"] == scope]
         ic = score.rank_ic(b).dropna()
-        return float(ic.std(ddof=1)), len(ic), "the baseline's per-period rank IC"
+        return score.long_run_sd(ic, t_lags(study)), len(ic), "the baseline's per-period rank IC"
     f = frame.assign(_flat=0.0)
     scored = in_stage(study, wf.run(f, ["_flat"], study.market.calendar)[0], "tuning")
     if scope != "universal":
@@ -401,7 +412,7 @@ def judge(
     """Tuning-period statistics for one candidate (no bars, no logging)."""
     gain = _gain(study, frame, baseline, c, wf, "tuning", base)
     return {
-        "t_tune": score.per_period_t(gain, label_overlap(study)),
+        "t_tune": period_t(study, gain),
         "gain_tune": float(gain.mean()),
         "periods": len(gain),
     }
@@ -412,7 +423,7 @@ def check(study, baseline: list[str], c: Candidate, wf, grant: CheckGrant) -> di
     rows = panel.model_rows(study, build_panel(study, "check", grant=grant))
     gain = _gain(study, rows, baseline, c, wf, "check")
     return {
-        "t_check": score.per_period_t(gain, label_overlap(study)),
+        "t_check": period_t(study, gain),
         "gain_check": float(gain.mean()),
     }
 
@@ -430,6 +441,19 @@ def residualize(f: pd.DataFrame, col: str, net: list[str]) -> pd.Series:
         b, *_ = np.linalg.lstsq(X, y, rcond=None)
         out[g.index] = y - X @ b
     return out
+
+
+def _confirm_noise(study, c: Candidate, sign: int, net: list[str] | None) -> float:
+    """Per-period noise of the candidate's own rank IC on the TUNING periods (open data, before the
+    check is read): coins move together, so it runs well above the null sd 1/sqrt(N - 1)."""
+    rows = panel.model_rows(study, build_panel(study, "tuning"))
+    f = in_stage(study, rows.assign(score=sign * transform(rows, c.feature, c.transform)), "tuning")
+    f = f.dropna(subset=["score", "fwd_return"])
+    if c.scope != "universal":
+        f = f[f["group"] == c.scope]
+    if net:
+        f = f.assign(score=residualize(f, "score", net)).dropna(subset=["score"])
+    return score.long_run_sd(score.rank_ic(f).dropna(), t_lags(study))
 
 
 def confirm(study, c: Candidate, sign: int, note: str = "", net: list[str] | None = None) -> dict:
@@ -452,18 +476,18 @@ def confirm(study, c: Candidate, sign: int, note: str = "", net: list[str] | Non
         f = f.assign(score=residualize(f, "score", net)).dropna(subset=["score"])
     n = f.groupby("decision_time").size()
     n = n[n > 2]
-    noise = float(np.sqrt((1 / (n - 1)).mean())) if len(n) else float("nan")
+    null = float(np.sqrt((1 / (n - 1)).mean())) if len(n) else float("nan")
+    tuned = _confirm_noise(study, c, sign, net)
+    noise, src = (
+        (tuned, "the candidate's per-period rank IC sd on tuning periods")
+        if tuned > null
+        else (null, "null sd of a rank IC, 1/sqrt(N-1)")
+    )
     power = power_check(
-        "rank IC",
-        noise,
-        len(n),
-        bar,
-        label_overlap(study),
-        "null sd of a rank IC, 1/sqrt(N-1)",
-        "rank IC on the check period",
+        "rank IC", noise, len(n), bar, label_overlap(study), src, "rank IC on the check period"
     )
     ic = score.rank_ic(f[f["decision_time"].isin(n.index)]).dropna()
-    t = score.per_period_t(ic, label_overlap(study))
+    t = period_t(study, ic)
     row = {
         "kind": "confirm",
         "name": c.name,
@@ -541,10 +565,10 @@ def pooled_strategy_test(
         parts[name] = {
             "weeks": len(net),
             "net_bp": round(float(net.mean()) * 1e4, 2),
-            "t": round(score.per_period_t(net), 3),
+            "t": round(period_t(study, net, overlap=False), 3),
         }
     pooled = pd.concat(nets)
-    t = score.per_period_t(pooled)
+    t = period_t(study, pooled, overlap=False)
     row = {
         "kind": "confirm",
         "name": f"strategy {'+' if sign > 0 else '-'}{feature} band {enter}/{exit}",
@@ -661,12 +685,12 @@ def pooled_long_short_test(
             "t_hc3": round(a.get("t_alpha", np.nan), 2),
             "beta": round(a.get("beta", np.nan), 2),
             "dollar_neutral_bp": round(float(w["net"].mean()) * 1e4, 1),
-            "dollar_neutral_t": round(score.per_period_t(w["net"]), 2),
+            "dollar_neutral_t": round(period_t(study, w["net"], overlap=False), 2),
         }
     wealth = (1 + pooled["net"]).cumprod()
     secondary = {
         "dollar_neutral_bp": round(float(pooled["net"].mean()) * 1e4, 1),
-        "dollar_neutral_t": round(score.per_period_t(pooled["net"]), 2),
+        "dollar_neutral_t": round(period_t(study, pooled["net"], overlap=False), 2),
         "alpha_ex_funding_bp": round(ex["alpha"] * 1e4, 1),
         "alpha_ex_funding_t": round(ex["t_alpha"], 2),
         "carry": bool(ex["alpha"] < fit["alpha"] / 2),

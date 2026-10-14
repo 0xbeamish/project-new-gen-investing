@@ -3,7 +3,8 @@ long holds.
 
 Input: scored rows (entity_id, decision_time, group, fwd_return, score, and rt_cost = round-trip
 cost as a fraction). One value per decision time, then a t-statistic over decision times:
-  rank_ic             Spearman of score with the group-adjusted forward return
+  rank_ic             Spearman of score with the group-adjusted forward return (net of each name's
+                      market beta when the rows carry fwd_excess)
   quantile_spreads    within each group, top q by score minus bottom q, equal weight, averaged over
                       groups with >= min_names names; net = minus the round trips of names entering
                       each leg (long-short, group-neutral)
@@ -12,7 +13,8 @@ cost as a fraction). One value per decision time, then a t-statistic over decisi
                       closes (perps); ols_alpha_hc3 judges it net of a benchmark's beta
   simulate_portfolio  a long-only rule (top-k, hysteresis band, periodic) against the equal-weight
                       universe; half a round trip per buy and per sell
-  per_period_t        mean / (sd / sqrt(n)), deflated by sqrt(overlap) when label windows overlap
+  per_period_t        mean / (sd / sqrt(n)), deflated by sqrt(overlap) when label windows overlap;
+                      with lags, never above the Newey-West t (the market's `t_stat_lags`)
   newey_west_t        mean / Newey-West (Bartlett) standard error, for autocorrelated series
 
 Overlapping cohorts (Jegadeesh-Titman), plain frames in, so any market with daily bars can use them:
@@ -34,13 +36,24 @@ import pandas as pd
 
 
 # ---------------------------------------------------------------- statistics
-def per_period_t(series: pd.Series, overlap: int = 1) -> float:
-    """t of the mean over periods, deflated by sqrt(overlap)."""
+def per_period_t(series: pd.Series, overlap: int = 1, lags: int | str = 0) -> float:
+    """t of the mean over periods, deflated by sqrt(overlap). With lags (an int, or "auto" for
+    floor(4 (n/100)^(2/9))), the smaller of that and the Newey-West t: streaky periods (crypto's
+    bull and bear runs) can only lower it."""
     s = pd.Series(series).dropna()
     sd = s.std(ddof=1)
     if len(s) < 3 or not sd > 0:
         return float("nan")
-    return float(s.mean() / (sd / np.sqrt(len(s))) / np.sqrt(overlap))
+    t = float(s.mean() / (sd / np.sqrt(len(s))) / np.sqrt(overlap))
+    k = nw_lags(len(s), lags)
+    return min(t, newey_west_t(s, k), key=abs) if k else t
+
+
+def nw_lags(n: int, lags: int | str) -> int:
+    """Lags for Newey-West: an int as given, "auto" = floor(4 (n/100)^(2/9)), at least 1."""
+    if lags == "auto":
+        return max(1, int(4 * (n / 100) ** (2 / 9)))
+    return int(lags or 0)
 
 
 def newey_west_t(series, lags: int) -> float:
@@ -49,11 +62,28 @@ def newey_west_t(series, lags: int) -> float:
     n = len(x)
     if n < 3:
         return float("nan")
+    var = _nw_var(x, lags)
+    return float(x.mean() / np.sqrt(var / n)) if var > 0 else float("nan")
+
+
+def _nw_var(x: np.ndarray, lags: int) -> float:
+    n = len(x)
     e = x - x.mean()
     var = e @ e / n
     for lag in range(1, min(lags, n - 1) + 1):
         var += 2 * (1 - lag / (lags + 1)) * (e[lag:] @ e[:-lag]) / n
-    return float(x.mean() / np.sqrt(var / n)) if var > 0 else float("nan")
+    return float(var)
+
+
+def long_run_sd(series, lags: int | str = 0) -> float:
+    """Per-period noise for a power calculation: the sd, raised to the Newey-West long-run sd when
+    the series is streaky (never lowered), so the MDE matches the t that will judge the test."""
+    x = pd.Series(series).dropna().to_numpy(dtype=float)
+    if len(x) < 3:
+        return float("nan")
+    sd = float(np.std(x, ddof=1))
+    k = nw_lags(len(x), lags)
+    return max(sd, float(np.sqrt(max(_nw_var(x, k), 0.0)))) if k else sd
 
 
 # The largest edge this research has measured is a rank IC near 0.035 and a net excess near 0.2% a
@@ -78,10 +108,10 @@ def overlap(horizon_bars: int, bars_between_decisions: int) -> int:
 
 
 def group_adjusted(scored: pd.DataFrame) -> pd.Series:
-    """Forward return minus its (decision time, group) mean."""
-    return scored["fwd_return"] - scored.groupby(["decision_time", "group"])[
-        "fwd_return"
-    ].transform("mean")
+    """Forward return (beta-adjusted fwd_excess when the market has it) minus its (decision time,
+    group) mean."""
+    col = "fwd_excess" if "fwd_excess" in scored else "fwd_return"
+    return scored[col] - scored.groupby(["decision_time", "group"])[col].transform("mean")
 
 
 def rank_ic(scored: pd.DataFrame) -> pd.Series:
@@ -317,15 +347,17 @@ def simulate_portfolio(
     }
 
 
-def summarize(series: dict, periods_per_year: int = 12, overlap_n: int = 1) -> dict:
+def summarize(
+    series: dict, periods_per_year: int = 12, overlap_n: int = 1, lags: int | str = 0
+) -> dict:
     """Means, t-statistics, turnover (and holding / cost share for portfolios) of a book's series."""
     g, n = series["gross"], series["net"]
     out = {
         "periods": len(g),
         "gross": float(g.mean()),
-        "gross_t": per_period_t(g, overlap_n),
+        "gross_t": per_period_t(g, overlap_n, lags),
         "net": float(n.mean()),
-        "net_t": per_period_t(n, overlap_n),
+        "net_t": per_period_t(n, overlap_n, lags),
         "annual_turnover": float(periods_per_year * series["turnover"].mean()),
     }
     if "avg_holding_periods" in series:
@@ -343,17 +375,20 @@ def evaluate(
     min_names: int = 10,
     periods_per_year: int = 12,
     overlap_n: int = 1,
+    lags: int | str = 0,
 ) -> dict:
     """Everything the scorer reports for one model's scores: rank IC, spreads, each portfolio rule."""
     ic = rank_ic(scored)
     out = {
         "periods": int(ic.notna().sum()),
         "ic": float(ic.mean()),
-        "ic_t": per_period_t(ic, overlap_n),
-        "spread": summarize(quantile_spreads(scored, q, min_names), periods_per_year, overlap_n),
+        "ic_t": per_period_t(ic, overlap_n, lags),
+        "spread": summarize(
+            quantile_spreads(scored, q, min_names), periods_per_year, overlap_n, lags
+        ),
     }
     for name, rule in (rules or {}).items():
-        out[name] = summarize(simulate_portfolio(scored, rule), periods_per_year, overlap_n)
+        out[name] = summarize(simulate_portfolio(scored, rule), periods_per_year, overlap_n, lags)
     return out
 
 
