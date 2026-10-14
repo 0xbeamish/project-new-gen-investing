@@ -463,6 +463,16 @@ The same engine on a different asset class, free data only (Binance public archi
     hold. It copied the rule's stated exposure on every card (correlation 1.00, zero overrides of 50+
     points). Book difference -0.1 bp/wk, t -1.41, bar 2.955. Shown the rule's answer, Jev defers to it;
     this test could not see any judgment of its own.
+- **Test 17: Jev judges the trend book with the rule's answer hidden (pre-registration 8, 8560c25,
+  2026-10-14): not kept.**
+  - Same 8,128 cards as test 16 without the rule's line ($0.15). Jev book minus rule book: -13.8 bp/wk,
+    t -1.68, bar 2.974.
+  - Jev reads the trend: its exposure correlates 0.63 with the rule's, rising from 15% (rule 0%) to 44%
+    (rule 100%). But it is cautious, at 32% exposure on average against the rule's 54%, so it holds less
+    and earns less: CAGR 7.8%, Sharpe 0.60, max drawdown -21%.
+  - Jev book vs BTC: alpha +0.1%/yr, t 0.03 (secondary).
+  - Not pre-registered (descriptive): the rule scaled down to Jev's average size has Sharpe 0.64 and
+    alpha t 0.34. At the same size, Jev's timing is no better than the rule's.
 - **Not tested here.** Text (Reddit, X, governance proposals): an AI reader remembers 2021-2024,
   so text needs forward collection and paper trading.
 
