@@ -287,3 +287,64 @@ loop:
 # Budget: ledger step jev_decider; ~10,000 calls, ~$1.5 projected; the run stops itself above $3.
 # AMENDMENT to pre-registration 6 (2026-10-12, before any call): V1 shows hack_usd_30d = 0 as "none" rather than
 #   its tied percentile bucket ("middle"). Nothing else changes.
+
+# PRE-REGISTRATION 7 (2026-10-14, committed before any return of this rule was computed; owner approved
+# the design, the holdout re-read and a $2.50 Jev cap on 2026-10-13/14). Two logged tests:
+#   test 15  a time-series trend book on the top 20 coins vs holding BTC
+#   test 16  Jev judges that book's call each week, vs the book alone
+# Run: engine.markets.crypto.trend.trend_test / jev_test (tests/test_trend.py). WEAKER EVIDENCE: every
+# date has been seen, and everyone knows crypto fell hard in 2018 and 2022, so any trend rule looks good
+# in hindsight. The rule is a standard one, fixed before any return of it was computed.
+#
+# Already known before writing this:
+#   - No time-series trend run on crypto exists (grep of FINDINGS, crypto.yaml and scratch scripts).
+#   - BTC and equal-weight universe returns per period (test 8: BTC +29/+118/-11 %/yr).
+#   - BTC weekly return sd 2018-2024: 9.3% (365 weeks).
+#   - Coins with >= 225 daily bars (listing counts, no returns): 2 from 2018-03-29, 5 from 2018-07-02,
+#     10 from 2019-01-07, 20 from 2019-08-28.
+#   - Literature: Zarattini-Pagani-Barbon 2025 report net Sharpe > 1.5 and alpha ~10.8%/yr vs BTC with a
+#     Donchian ensemble (their backtest; abstract read, details not verified).
+#
+# Test 15, the rule (no fitting, nothing chosen from returns):
+#   Each Monday 00:00 UTC, the set is the top 20 coins by 30-day mean USDT volume (exclusions above), among
+#   those with >= 225 daily bars and a bar on the Sunday.
+#   - Exposure: the share of lookbacks L in {28, 56, 112, 224} days over which the Sunday close rose
+#     (0, .25, .5, .75 or 1).
+#   - Size: weight = exposure x min(1, 50%/yr / the coin's 60-day realized vol) / D, where
+#     D = min(20, coins in the set). The rest is cash earning 0.
+#   - Prices: enter and exit at the Sunday close (the price at the decision, no dead day). A coin that
+#     stops trading exits at its last close, with no penalty.
+#   - Costs: per unit traded, half the market's round trip (10 bp fee + square-root impact of $10k);
+#     turnover is measured against last week's drifted weights.
+#   Periods: decisions 2018-04-02 (the first Monday with 2 coins in the set) to the last full week
+#   before 2026-09-30, about 443 weeks. It re-reads the 2025+ holdout: a holdout log row is written
+#   first. It also counts one check look.
+#   PRIMARY: OLS of the book's weekly net return on BTC's weekly return. t of alpha = the smaller of HC3
+#   and Newey-West (auto lags). Kept if t >= the registry's next bar at run time (2.935 now) and alpha > 0.
+#   Power: over ~8.5 years, a 50% chance needs an alpha information ratio (alpha / its sd, per year) of
+#   about 1.0; 80% needs about 1.3. At a residual sd of 25%/yr, that is an alpha of ~25%/yr (50%) or
+#   ~32%/yr (80%). The published ~11%/yr would give an expected t of ~1. A miss most likely means
+#   "couldn't tell".
+#   Secondary (descriptive, all listed now): CAGR, vol, Sharpe and max drawdown of the book, of BTC and of
+#   an equal-weight hold of the same set (gross), per period (2018-20, 2021-23, 2024, 2025-26); average
+#   invested share; turnover and cost drag. Variants: no vol scaling; BTC+ETH only (each with its alpha t).
+#   AMENDMENT before commit (2026-10-14, owner's choice, nothing computed): the draft fixed D = 20 from
+#   2018-01-01. That would have left the book mostly in forced cash through the 2018 crash for want of
+#   listed coins, not because of trend. Changed to D = min(20, coins in the set), starting 2018-04-02.
+#
+# Test 16, Jev judges the book (jev-1.13.0, TypeSafe; run after test 15 is logged):
+#   - Card: each Monday, for each coin in the set, Jev sees an anonymized card (no name, no date, numbers
+#     rounded): % change over 28/56/112/224 days, 60-day vol (annualized), drawdown from the 1-year high,
+#     and the rule's exposure ("the trend rule says: hold 75%").
+#   - Question (Score): what share of the normal position to hold next week. Jev's probability-weighted
+#     score replaces the rule's exposure; sizing, D and costs are unchanged.
+#   - PRIMARY: weekly net return of the Jev book minus the rule book. t = the smaller of iid and
+#     Newey-West (auto). Kept if t >= the next bar at run time (~2.96) and the mean > 0. The power limits
+#     are the same as test 15's.
+#   - Secondary: average exposures, overrides of >= 50 points and what those coin-weeks earned, and each
+#     book per period.
+#   - Budget: ~20 x ~443 calls (fewer before 2019-08), ~$1.30 at prereg 6's rate. The run stops itself
+#     above $2.50 (~/jev-investor/data/costs.csv, step jev_decider: $5.34 of $10 spent).
+#   - Memorization: Jev may guess the regime from a deep drawdown, but it can't see the date, the name or
+#     the next week. It is stateless and not trained on customer calls.
+# Order: commit this -> holdout log row -> test 15 -> Jev calls -> test 16. Both are logged whatever the result.

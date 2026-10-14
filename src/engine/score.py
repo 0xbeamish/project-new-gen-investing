@@ -268,6 +268,30 @@ def ols_alpha_hc3(y, x) -> dict:
     }
 
 
+def ols_alpha_robust(y, x, lags: int | str = "auto") -> dict:
+    """ols_alpha_hc3 plus a Newey-West (Bartlett) t of alpha; t_alpha is the smaller of the two in
+    size, so neither heteroskedastic nor streaky weeks can inflate it."""
+    out = ols_alpha_hc3(y, x)
+    y, x = np.asarray(y, float), np.asarray(x, float)
+    X = np.column_stack([np.ones_like(x), x])
+    XtXi = np.linalg.inv(X.T @ X)
+    e = y - X @ (XtXi @ X.T @ y)
+    u = X * e[:, None]
+    k = nw_lags(len(y), lags)
+    S = u.T @ u
+    for lag in range(1, min(k, len(y) - 1) + 1):
+        g = u[lag:].T @ u[:-lag]
+        S += (1 - lag / (k + 1)) * (g + g.T)
+    cov = XtXi @ S @ XtXi
+    t_nw = float(out["alpha"] / np.sqrt(cov[0, 0]))
+    return out | {
+        "t_hc3": out["t_alpha"],
+        "t_nw": t_nw,
+        "nw_lags": k,
+        "t_alpha": min(out["t_alpha"], t_nw, key=abs),
+    }
+
+
 # ---------------------------------------------------------------- long-only portfolio rules
 # A rule: choose(frame of one decision time indexed by entity, with `pct`, held set, t) -> set
 
